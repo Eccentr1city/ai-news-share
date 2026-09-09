@@ -50,6 +50,13 @@ def cmd_llm(args) -> None:
     if getattr(args, "status", False):
         print(json.dumps(llm_classify.status(DATA), indent=1))
         return
+    if getattr(args, "adjudicate", False):
+        r = llm_classify.adjudicate(DATA, model=args.model, dry_run=args.dry_run)
+        print(json.dumps(r))
+        if r.get("relabeled"):
+            wikipedia.backfill(date.today(), date.today() - timedelta(days=1), DATA)
+            nyt.backfill(DATA, date.today(), date.today())
+        return
     r = llm_classify.run(DATA, force_sync=getattr(args, "sync", False))
     print(json.dumps(r))
     if not r.get("skipped") and (r.get("ingested") or r.get("labeled_sync")):
@@ -143,6 +150,9 @@ def main(argv=None) -> None:
     l = sub.add_parser("llm")
     l.add_argument("--status", action="store_true")
     l.add_argument("--sync", action="store_true", help="label synchronously even if the backlog is large")
+    l.add_argument("--adjudicate", action="store_true", help="re-label chunks with any AI positive using --model")
+    l.add_argument("--model", default="claude-sonnet-5")
+    l.add_argument("--dry-run", action="store_true")
     l.set_defaults(fn=cmd_llm)
     s = sub.add_parser("snapshot")
     s.set_defaults(fn=cmd_snapshot)

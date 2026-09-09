@@ -34,15 +34,15 @@ PER_REQUEST = 25
 SYNC_LIMIT = 500  # more pending items than this -> Batches API
 STATE = "llm_batch_state.json"
 
-SYSTEM = """You label short news items by topic. For each item decide, independently, whether the item is substantially ABOUT each topic below. A passing mention does not count; the topic must be a main subject of the item.
+SYSTEM = """You label short news items by topic. For each item decide, independently, whether the item is substantially ABOUT each topic below. A passing mention does not count; the topic must be a main subject of the item. When in doubt, answer false.
 
-ai: artificial intelligence - AI systems, models, chatbots, agents; AI companies and labs and their products, funding, leadership; chips, compute and data centers built for AI; AI policy, regulation, safety, risk; AI-generated media and deepfakes; AI's effects on work, education, science, warfare, culture. Not: ordinary software, social media, robots or automation without an AI angle, self-driving cars unless AI itself is the focus.
+ai: artificial intelligence as such - AI or machine-learning systems, models, chatbots, agents; AI companies and labs (OpenAI, Anthropic, DeepMind, xAI, Nvidia's AI business, etc.), their products, funding, leadership; chips, compute and data centers built for AI; AI policy, regulation, safety, risk; AI-generated media and deepfakes; AI's effects on work, education, science, warfare, culture. The item must name or unmistakably describe AI/machine learning. Does NOT count: self-driving cars and autonomous vehicles; robots, drones and automation in general; facial recognition or surveillance unless the item frames it as AI; gene editing, biotech, quantum computing, supercomputers, semiconductors or chips in general; social-media bots, hacking, cyberattacks, data privacy; big-tech business news (layoffs, antitrust, executives) unless AI is the subject; "the future of technology" pieces that do not specifically concern AI.
 
 covid: the COVID-19 pandemic - cases, deaths, variants, testing, lockdowns and restrictions, covid vaccines, and economic or political consequences explicitly attributed to the pandemic. Not other diseases.
 
 climate: climate change and global warming - emissions and climate policy, climate negotiations, climate protests, decarbonisation, and extreme weather or disasters explicitly linked to climate change. Not weather or disasters with no climate framing.
 
-Items are given as "[i] text", where text may start with the parent headings the item was filed under (separated by " > "). Return one label object per item, in order, with the same i."""
+Items are given as "[i] text", where text may start with the parent headings the item was filed under (separated by " > "). Return exactly one label object per item, in order, with the same i, and copy the item's first three words into echo so the labels can be checked against the items."""
 
 SCHEMA = {
     "type": "object",
@@ -51,8 +51,8 @@ SCHEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {"i": {"type": "integer"}, "ai": {"type": "boolean"}, "covid": {"type": "boolean"}, "climate": {"type": "boolean"}},
-                "required": ["i", "ai", "covid", "climate"],
+                "properties": {"i": {"type": "integer"}, "echo": {"type": "string"}, "ai": {"type": "boolean"}, "covid": {"type": "boolean"}, "climate": {"type": "boolean"}},
+                "required": ["i", "echo", "ai", "covid", "climate"],
                 "additionalProperties": False,
             },
         }
@@ -62,25 +62,38 @@ SCHEMA = {
 }
 
 
-def _params(chunk: list[tuple[str, str]]) -> dict:
+def _params(chunk: list[tuple[str, str]], model: str | None = None) -> dict:
     body = "\n".join(f"[{i}] {text[:600]}" for i, (_, text) in enumerate(chunk))
     return dict(
-        model=MODEL,
-        max_tokens=1500,
+        model=model or MODEL,
+        max_tokens=2500,
         system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": body}],
         output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
     )
 
 
-def _parse(chunk: list[tuple[str, str]], text: str) -> list[dict]:
+def _norm_words(t: str, n: int = 3) -> list[str]:
+    return [w.strip(".,;:'\"()[]").lower() for w in t.split()[:n]]
+
+
+def _parse(chunk: list[tuple[str, str]], text: str, model: str | None = None) -> list[dict]:
+    """Rows for labels whose echo matches the item; misaligned or missing labels are simply absent
+    (they stay pending and get labelled one at a time later)."""
     out = json.loads(text).get("labels", [])
-    rows = []
+    rows, seen = [], set()
     for lab in out:
         i = lab.get("i")
-        if isinstance(i, int) and 0 <= i < len(chunk):
-            key, t = chunk[i]
-            rows.append({"key": key, **{k: bool(lab.get(k)) for k in TOPICS}, "model": MODEL, "text": t[:160]})
+        if not (isinstance(i, int) and 0 <= i < len(chunk)) or i in seen:
+            continue
+        key, t = chunk[i]
+        echo = _norm_words(str(lab.get("echo", "")))
+        want = _norm_words(t)
+        if echo and want and echo[: len(want)] != want[: len(echo)] and echo[0] != want[0]:
+            log.debug("echo mismatch at %d: %r vs %r", i, echo, want)
+            continue
+        seen.add(i)
+        rows.append({"key": key, **{k: bool(lab.get(k)) for k in TOPICS}, "model": model or MODEL, "text": t[:160]})
     return rows
 
 
@@ -125,21 +138,32 @@ def _chunks(xs, n):
 
 
 # ------------------------------------------------------------ sync path ---
-def classify_sync(client: anthropic.Anthropic, data_dir: Path, items: list[tuple[str, str]]) -> int:
+def _create(client: anthropic.Anthropic, chunk, model=None):
+    try:
+        return client.messages.create(**_params(chunk, model))
+    except anthropic.RateLimitError as e:
+        wait = int(e.response.headers.get("retry-after", "30"))
+        log.warning("rate limited; sleeping %ss", wait)
+        time.sleep(wait)
+        return client.messages.create(**_params(chunk, model))
+
+
+def classify_sync(client: anthropic.Anthropic, data_dir: Path, items: list[tuple[str, str]], model: str | None = None, per_request: int = PER_REQUEST) -> int:
+    """Label items `per_request` at a time; anything whose echo fails is retried alone."""
     n = 0
-    for chunk in _chunks(items, PER_REQUEST):
-        try:
-            resp = client.messages.create(**_params(chunk))
-        except anthropic.RateLimitError as e:
-            wait = int(e.response.headers.get("retry-after", "30"))
-            log.warning("rate limited; sleeping %ss", wait)
-            time.sleep(wait)
-            resp = client.messages.create(**_params(chunk))
+    for chunk in _chunks(items, per_request):
+        resp = _create(client, chunk, model)
         if resp.stop_reason == "refusal":
             log.warning("refusal on a chunk; skipping %d items", len(chunk))
             continue
         text = next((b.text for b in resp.content if b.type == "text"), "")
-        rows = _parse(chunk, text)
+        rows = _parse(chunk, text, model)
+        got = {r["key"] for r in rows}
+        for key, t in chunk:  # retry misaligned/missing items singly
+            if key not in got and per_request > 1:
+                r1 = _create(client, [(key, t)], model)
+                t1 = next((b.text for b in r1.content if b.type == "text"), "")
+                rows.extend(_parse([(key, t)], t1, model))
         labels.append(data_dir, rows)
         n += len(rows)
     return n
@@ -214,6 +238,28 @@ def run(data_dir: Path, *, force_sync: bool = False) -> dict:
         result["labeled_sync"] = classify_sync(client, data_dir, todo)
     else:
         result["batch"] = submit_batch(client, data_dir, todo)
+    return result
+
+
+def adjudicate(data_dir: Path, model: str = "claude-sonnet-5", *, dry_run: bool = False) -> dict:
+    """Re-label, with a stronger model and the current rubric, every 25-item chunk that
+    contains an AI positive from either classifier. Chunks with no AI signal are left alone
+    (a misaligned label inside an all-negative chunk cannot change the AI counts)."""
+    from .topics import AI
+
+    texts = collect_texts(data_dir)
+    have = labels.load(data_dir)
+    items = list(texts.items())
+    chunks = list(_chunks(items, PER_REQUEST))
+    todo = []
+    for ch in chunks:
+        if any((have.get(k, {}).get("ai")) or AI.matches(t) for k, t in ch):
+            todo.extend(ch)
+    result = {"chunks": len(chunks), "selected_items": len(todo), "model": model}
+    if dry_run or not todo:
+        return result
+    client = anthropic.Anthropic(api_key=env("ANTHROPIC_API_KEY"))
+    result["relabeled"] = classify_sync(client, data_dir, todo, model=model)
     return result
 
 

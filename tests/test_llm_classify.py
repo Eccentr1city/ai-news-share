@@ -9,12 +9,21 @@ def test_params_and_parse_roundtrip(tmp_path):
     assert p["output_config"]["format"]["type"] == "json_schema"
     assert "[0] AI boom > OpenAI releases GPT-6" in p["messages"][0]["content"]
     rows = llm_classify._parse(chunk, json.dumps({"labels": [
-        {"i": 0, "ai": True, "covid": False, "climate": False},
-        {"i": 1, "ai": False, "covid": False, "climate": False},
-        {"i": 7, "ai": True, "covid": True, "climate": True},  # out of range: ignored
+        {"i": 0, "echo": "AI boom >", "ai": True, "covid": False, "climate": False},
+        {"i": 1, "echo": "Floods kill 12", "ai": False, "covid": False, "climate": False},
+        {"i": 7, "echo": "x y z", "ai": True, "covid": True, "climate": True},  # out of range: ignored
     ]}))
     assert [r["key"] for r in rows] == ["k1", "k2"]
     assert rows[0]["ai"] is True and rows[1]["ai"] is False
+
+
+def test_parse_drops_misaligned_echo():
+    chunk = [("k1", "OpenAI releases GPT-6"), ("k2", "Floods kill 12 in Turkey")]
+    rows = llm_classify._parse(chunk, json.dumps({"labels": [
+        {"i": 0, "echo": "Floods kill 12", "ai": False, "covid": False, "climate": False},  # shifted
+        {"i": 1, "echo": "Floods kill 12", "ai": False, "covid": False, "climate": False},
+    ]}))
+    assert [r["key"] for r in rows] == ["k2"]
 
 
 def test_label_cache_roundtrip(tmp_path):
