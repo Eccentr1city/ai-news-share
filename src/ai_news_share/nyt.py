@@ -106,7 +106,13 @@ def backfill(data_dir: Path, start: date = START, end: date | None = None, *, bu
         by_month[tag] = [item_from_doc(d) for d in docs if is_front_page(d)]
         done.add(tag)
         log.info("nyt %s: %d articles, %d on page 1", tag, len(docs), len(by_month[tag]))
-    # Re-classify with current patterns and write out.
+        _write(by_month, done, items_path, daily_path)  # persist after every month
+    _write(by_month, done, items_path, daily_path)
+    return True
+
+
+def _write(by_month: dict[str, list[dict]], done: set[str], items_path: Path, daily_path: Path) -> None:
+    """Re-classify with the current patterns and write both files."""
     daily: dict[str, dict] = {}
     with items_path.open("w") as f:
         for tag in sorted(by_month):
@@ -130,5 +136,4 @@ def backfill(data_dir: Path, start: date = START, end: date | None = None, *, bu
             }
         )
     )
-    log.info("wrote %s (%d days)", daily_path, len(daily))
-    return True
+    log.debug("wrote %s (%d days)", daily_path, len(daily))
