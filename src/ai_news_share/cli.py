@@ -2,6 +2,7 @@
 
   ai-news-share backfill [--since 2017-01-01] [--no-gdelt]   fetch/refresh all history
   ai-news-share gdelt [--budget-minutes 25] [--kind tv|doc]  slow, cached GDELT crawl (safe to re-run)
+  ai-news-share nyt                                          NYT front page (needs NYT_API_KEY; resumable)
   ai-news-share snapshot                                     append today's Google News top stories
   ai-news-share report                                       print the headline comparison
   ai-news-share update                                       backfill + snapshot + report (what CI runs)
@@ -15,7 +16,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import analysis, gdelt, googlenews, wikipedia
+from . import analysis, gdelt, googlenews, nyt, wikipedia
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "docs" / "data"
@@ -25,8 +26,14 @@ def cmd_backfill(args) -> None:
     since = date.fromisoformat(args.since)
     end = date.today() - timedelta(days=1)  # today's Wikipedia page is still being written
     wikipedia.backfill(since, end, DATA)
+    nyt.backfill(DATA, max(since, nyt.START))
     if not args.no_gdelt:
         cmd_gdelt(args)
+
+
+def cmd_nyt(args) -> None:
+    if not nyt.backfill(DATA, budget_s=60 * args.budget_minutes):
+        sys.exit("NYT_API_KEY is not set (environment or .env); see README")
 
 
 def cmd_gdelt(args) -> None:
@@ -115,6 +122,9 @@ def main(argv=None) -> None:
     g.add_argument("--kind", choices=["tv", "doc"])
     g.add_argument("--budget-minutes", type=float, default=25)
     g.set_defaults(fn=cmd_gdelt)
+    n = sub.add_parser("nyt")
+    n.add_argument("--budget-minutes", type=float, default=40)
+    n.set_defaults(fn=cmd_nyt)
     s = sub.add_parser("snapshot")
     s.set_defaults(fn=cmd_snapshot)
     r = sub.add_parser("report")

@@ -33,6 +33,7 @@ measures three instruments that trade off breadth, prominence and history:
 | **Wikipedia Current Events** (primary) | Leaf items on `Portal:Current events/<day>`, an editorially curated list of the day's important news, ~15–40 items/day | share of items matching the AI regex, pooled over a rolling window | 2017 → today | "the top ~100 stories this week" |
 | **GDELT TV** | CNN + Fox News + MSNBC airtime, via the Internet Archive TV News archive | % of 15-second clips mentioning AI (station average) | 2017 → recently | front-page *prominence* |
 | **GDELT DOC** | Every US English online article GDELT monitors | % of articles matching the AI query | 2017 → today | total *volume* |
+| **NYT print front page** (needs free key) | Articles with `print_page == 1` from the NYT Archive API, ~5–8/day | share of page-one articles matching the AI regex | 1851 → today (fetched from 2017) | a literal US front page, one paper |
 | **Google News Top Stories** | The ~35–70 headlines Google ranks as top stories right now | share of headlines | from the day you start collecting | the literal "top stories" framing, going forward |
 
 The Covid comparison uses the same instrument and the same classifier
@@ -85,7 +86,11 @@ The TV archive API currently ends in October 2024. If you want a stronger
 free options are the **NYT Archive API** (every article since 1851 with
 `print_page`, so "page 1 of the print paper" is a literal front-page series)
 and **Media Cloud** (story counts per day over its US National collection).
-Neither is wired in yet; both would slot in as a new module next to `gdelt.py`.
+The NYT one is wired in (`src/ai_news_share/nyt.py`): put `NYT_API_KEY=...` in a
+git-ignored `.env` (see `.env.example`) or the environment, run
+`uv run ai-news-share nyt`, and a "NYT print front page" source appears in the
+dashboard. For the daily job, add the key as a repository secret named
+`NYT_API_KEY`. Media Cloud is not wired in yet.
 
 ## Honest caveats
 
