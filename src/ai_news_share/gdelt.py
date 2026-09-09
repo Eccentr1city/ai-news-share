@@ -1,16 +1,26 @@
 """GDELT timelines: DOC 2.0 (online articles) and TV 2.0 (cable news airtime).
 
 Both return `timelinevol`: the *percentage of all monitored content* matching
-the query, daily. DOC covers 2017-01-01+; TV (Internet Archive TV News)
-covers 2009-07+. GDELT rate-limits hard (1 request / 5 s, and cools down
-offenders for a while), so calls are paced and failures are non-fatal.
+the query, daily. DOC covers 2017-01-01+; the TV archive API currently ends in
+October 2024.
+
+GDELT has no paid tier and throttles aggressively (nominally 1 request / 5 s,
+in practice long cool-downs after any burst). So this module is a *slow
+crawler with a persistent cache*: the work is split into (kind, topic, year)
+chunks, each finished chunk is recorded in docs/data/gdelt_<kind>.json, and
+every run just does as many unfinished chunks as its time budget allows,
+pausing INTERVAL seconds between requests and backing off for minutes on a
+429. Re-run it (or let the daily job run it) until nothing is left.
 """
 from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import date, timedelta
 from pathlib import Path
+
+import httpx
 
 from . import http
 from .topics import TOPICS
@@ -21,12 +31,13 @@ DOC_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 TV_URL = "https://api.gdeltproject.org/api/v2/tv/tv"
 DOC_SCOPE = "sourcecountry:US sourcelang:english"
 TV_SCOPE = "(station:CNN OR station:FOXNEWS OR station:MSNBC)"
-DOC_START = date(2017, 1, 1)
-TV_START = date(2017, 1, 1)  # TV goes back to 2009 but 2017 keeps the two comparable
-INTERVAL = 6.0
+START = date(2017, 1, 1)
+INTERVAL = 20.0  # seconds between requests: slow on purpose
+BACKOFF = (60, 120, 240, 480)  # seconds to wait after successive throttle responses
+REFRESH_CURRENT_YEAR_AFTER_DAYS = 1
 
 
-class GdeltError(RuntimeError):
+class Throttled(RuntimeError):
     pass
 
 
@@ -38,11 +49,18 @@ def _timeline(url: str, query: str, start: date, end: date) -> dict[str, float]:
         "startdatetime": start.strftime("%Y%m%d000000"),
         "enddatetime": end.strftime("%Y%m%d235959"),
     }
-    r = http.get(url, params, min_interval=INTERVAL)
     try:
-        js = r.json()
-    except json.JSONDecodeError:
-        raise GdeltError(r.text[:200].strip())
+        r = http.get(url, params, min_interval=INTERVAL, tries=1)
+    except httpx.HTTPStatusError as ex:
+        if ex.response is not None and ex.response.status_code == 429:
+            raise Throttled("HTTP 429") from ex
+        raise
+    text = r.text.strip()
+    if not text.startswith("{"):
+        if "limit requests" in text or r.status_code == 429:
+            raise Throttled(text[:120])
+        raise RuntimeError(text[:160])  # e.g. "Your query was too short or too long."
+    js = json.loads(text)
     out: dict[str, list[float]] = {}
     for series in js.get("timeline", []):
         for pt in series.get("data", []):
@@ -52,7 +70,7 @@ def _timeline(url: str, query: str, start: date, end: date) -> dict[str, float]:
     return {d: sum(v) / len(v) for d, v in out.items()}
 
 
-def _year_chunks(start: date, end: date):
+def _chunks(start: date, end: date):
     s = start
     while s <= end:
         e = min(date(s.year, 12, 31), end)
@@ -60,37 +78,92 @@ def _year_chunks(start: date, end: date):
         s = e + timedelta(days=1)
 
 
-def backfill(kind: str, start: date, end: date, data_dir: Path) -> bool:
-    """kind in {"doc","tv"}. Returns False (without raising) if GDELT refuses."""
+def _load(path: Path, kind: str, scope: str) -> dict:
+    if path.exists():
+        st = json.loads(path.read_text())
+    else:
+        st = {"meta": {}, "series": {}, "done": {}}
+    st["meta"].update(
+        {
+            "source": "GDELT DOC 2.0 timelinevol (US, English)" if kind == "doc" else "GDELT TV 2.0 timelinevol (CNN/Fox/MSNBC avg)",
+            "unit": "% of monitored articles" if kind == "doc" else "% of 15-second airtime clips",
+            "queries": {k: t.gdelt_query for k, t in TOPICS.items()},
+            "scope": scope,
+        }
+    )
+    st.setdefault("done", {})
+    st.setdefault("series", {})
+    return st
+
+
+def pending(kind: str, end: date, data_dir: Path) -> list[tuple[str, date, date]]:
+    """Chunks not yet fetched (or the current year, if it is stale)."""
+    scope = DOC_SCOPE if kind == "doc" else TV_SCOPE
+    st = _load(data_dir / f"gdelt_{kind}.json", kind, scope)
+    todo = []
+    today = date.today().isoformat()
+    for key, topic in TOPICS.items():
+        # If the query text changed, everything for that topic is stale.
+        if st["done"].get(f"{key}:query") not in (None, topic.gdelt_query):
+            for k in [k for k in st["done"] if k.startswith(f"{key}:")]:
+                del st["done"][k]
+            st["series"][key] = {}
+        for s, e in _chunks(START, end):
+            tag = f"{key}:{s.year}"
+            fetched = st["done"].get(tag)
+            current = s.year == end.year
+            stale = current and fetched and (date.fromisoformat(today) - date.fromisoformat(fetched[:10])).days >= REFRESH_CURRENT_YEAR_AFTER_DAYS
+            if not fetched or stale:
+                todo.append((key, s, e))
+    return todo
+
+
+def crawl(kind: str, end: date, data_dir: Path, *, budget_s: float = 25 * 60) -> dict:
+    """Fetch pending chunks for `kind` until the time budget runs out.
+
+    Returns {"fetched": n, "pending": m, "throttled": bool}. Never raises for
+    GDELT-side trouble; progress is saved after every chunk.
+    """
     url, scope = (DOC_URL, DOC_SCOPE) if kind == "doc" else (TV_URL, TV_SCOPE)
     path = data_dir / f"gdelt_{kind}.json"
-    prev = json.loads(path.read_text()) if path.exists() else {"series": {}}
-    series: dict[str, dict[str, float]] = {k: dict(v) for k, v in prev["series"].items()}
-    # Only refetch the current year unless a topic has no history yet.
-    for key, topic in TOPICS.items():
-        have = series.setdefault(key, {})
-        first = start if not have else date(end.year, 1, 1)
-        for s, e in _year_chunks(first, end):
-            try:
-                pts = _timeline(url, f"{topic.gdelt_query} {scope}", s, e)
-            except (GdeltError, Exception) as ex:  # noqa: BLE001
-                log.warning("gdelt %s %s %s..%s failed: %s", kind, key, s, e, str(ex)[:120])
-                if not have:
-                    return False
-                continue
-            have.update(pts)
-            log.info("gdelt %s %s %s..%s: %d days", kind, key, s, e, len(pts))
-    path.write_text(
-        json.dumps(
-            {
-                "meta": {
-                    "source": "GDELT DOC 2.0 timelinevol (US, English)" if kind == "doc" else "GDELT TV 2.0 timelinevol (CNN/Fox/MSNBC avg)",
-                    "unit": "% of monitored articles" if kind == "doc" else "% of 15-second airtime clips",
-                    "queries": {k: t.gdelt_query for k, t in TOPICS.items()},
-                    "scope": scope,
-                },
-                "series": {k: dict(sorted(v.items())) for k, v in series.items()},
-            }
-        )
-    )
-    return True
+    st = _load(path, kind, scope)
+    todo = pending(kind, end, data_dir)
+    t0 = time.monotonic()
+    fetched, throttles = 0, 0
+    for key, s, e in todo:
+        if time.monotonic() - t0 > budget_s:
+            break
+        topic = TOPICS[key]
+        try:
+            pts = _timeline(url, f"{topic.gdelt_query} {scope}", s, e)
+        except Throttled as ex:
+            throttles += 1
+            if throttles > len(BACKOFF):
+                log.warning("gdelt %s: throttled repeatedly, giving up for this run", kind)
+                break
+            wait = BACKOFF[throttles - 1]
+            log.warning("gdelt %s throttled (%s); sleeping %ds", kind, str(ex)[:60], wait)
+            if time.monotonic() - t0 + wait > budget_s:
+                break
+            time.sleep(wait)
+            continue
+        except (httpx.HTTPError, RuntimeError, json.JSONDecodeError) as ex:
+            log.warning("gdelt %s %s %s: %s", kind, key, s.year, str(ex)[:120])
+            if "too short or too long" in str(ex):
+                break  # query needs fixing in topics.py; retrying is pointless
+            time.sleep(INTERVAL)
+            continue
+        throttles = 0
+        series = st["series"].setdefault(key, {})
+        for d in [d for d in series if s.isoformat() <= d <= e.isoformat()]:
+            del series[d]
+        series.update(pts)
+        st["done"][f"{key}:{s.year}"] = date.today().isoformat()
+        st["done"][f"{key}:query"] = topic.gdelt_query
+        fetched += 1
+        st["series"][key] = dict(sorted(series.items()))
+        path.write_text(json.dumps(st))
+        log.info("gdelt %s %s %d: %d days", kind, key, s.year, len(pts))
+    left = len(pending(kind, end, data_dir))
+    log.info("gdelt %s: fetched %d chunks this run, %d pending", kind, fetched, left)
+    return {"fetched": fetched, "pending": left, "throttled": throttles > 0}

@@ -56,6 +56,37 @@ with the current patterns.
    emergency, CARES Act…) with the coverage level at each, so the question
    "how much coverage preceded which political action?" has a number.
 
+## Growth rate: doubling time of the odds
+
+A share is bounded by 100%, so "exponential growth of the share" has to
+saturate; the **odds** (AI items : everything else) do not. The dashboard's
+*log odds* scale plots ln(odds), where exponential growth is a straight line,
+and fits least-squares lines over a Covid takeoff window (default
+2020-01-15 → 2020-03-15) and over recent AI windows. Slope becomes a doubling
+time: ln 2 ÷ slope. Zero counts get a Jeffreys pseudo-count of 0.5 so the log
+is finite. As of September 2026: Covid's odds doubled every ~9 days during
+takeoff (r² ≈ 0.7–0.9); AI's odds have been roughly flat since ChatGPT
+(doubling time of years, r² ≈ 0).
+
+## GDELT: slow crawl, permanent cache
+
+GDELT has no paid tier and throttles hard, so `ai-news-share gdelt` is a
+resumable crawler: one request every 20 s, minutes of backoff on a 429, each
+(topic, year) chunk written to `docs/data/gdelt_*.json` as soon as it lands,
+and a time budget per run (`--budget-minutes`, default 25). The daily job
+spends 30 minutes on it; run it locally for longer if you want it done sooner:
+
+```bash
+uv run ai-news-share gdelt --budget-minutes 240
+```
+
+The TV archive API currently ends in October 2024. If you want a stronger
+"US top stories" series and are willing to sign up for a key, the two best
+free options are the **NYT Archive API** (every article since 1851 with
+`print_page`, so "page 1 of the print paper" is a literal front-page series)
+and **Media Cloud** (story counts per day over its US National collection).
+Neither is wired in yet; both would slot in as a new module next to `gdelt.py`.
+
 ## Honest caveats
 
 - **Wikipedia's portal is global and event-shaped.** It records things that

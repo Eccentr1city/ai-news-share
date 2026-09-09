@@ -46,3 +46,23 @@ def test_compare_match_on_window_start_is_not_a_date():
     cmp = analysis.compare(ai, covid)
     assert cmp.match_date is None
     assert "start of the window" in cmp.notes[0]
+
+
+def test_fit_doubling_recovers_known_rate():
+    import math
+    # odds double every 10 days -> ln(odds) rises ln2/10 per day
+    series = {}
+    for i in range(40):
+        d = analysis.date(2020, 1, 1) + analysis.timedelta(days=i)
+        series[d.isoformat()] = math.log(0.01) + i * math.log(2) / 10
+    fit = analysis.fit_doubling(series, "2020-01-01", "2020-02-09")
+    assert abs(fit.doubling_days - 10) < 1e-6
+    assert fit.r2 > 0.999
+    assert fit.halving_days is None
+
+
+def test_pooled_log_odds_handles_zero_counts():
+    daily = {"2020-01-01": {"n": 100, "ai": 0}, "2020-01-02": {"n": 100, "ai": 10}}
+    lo = analysis.pooled_log_odds(daily, "ai", k=1)
+    assert lo["2020-01-01"] < -5  # finite, thanks to the pseudo-count
+    assert abs(lo["2020-01-02"] - __import__("math").log(10.5 / 90.5)) < 1e-9

@@ -15,8 +15,8 @@ jobs:
       - run: uv sync --frozen
       - run: uv run pytest -q
       - name: Fetch data and print report
-        run: uv run ai-news-share update
-        timeout-minutes: 40
+        run: uv run ai-news-share update --budget-minutes 30 --window 14
+        timeout-minutes: 50
       - name: Commit data
         run: |
           git config user.name "github-actions[bot]"

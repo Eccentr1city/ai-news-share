@@ -1,6 +1,7 @@
 """Command line entry point.
 
   ai-news-share backfill [--since 2017-01-01] [--no-gdelt]   fetch/refresh all history
+  ai-news-share gdelt [--budget-minutes 25] [--kind tv|doc]  slow, cached GDELT crawl (safe to re-run)
   ai-news-share snapshot                                     append today's Google News top stories
   ai-news-share report                                       print the headline comparison
   ai-news-share update                                       backfill + snapshot + report (what CI runs)
@@ -25,10 +26,16 @@ def cmd_backfill(args) -> None:
     end = date.today() - timedelta(days=1)  # today's Wikipedia page is still being written
     wikipedia.backfill(since, end, DATA)
     if not args.no_gdelt:
-        for kind in ("tv", "doc"):
-            ok = gdelt.backfill(kind, max(since, gdelt.DOC_START), date.today(), DATA)
-            if not ok:
-                logging.warning("GDELT %s unavailable; dashboard falls back to Wikipedia only", kind)
+        cmd_gdelt(args)
+
+
+def cmd_gdelt(args) -> None:
+    kinds = [args.kind] if getattr(args, "kind", None) else ["tv", "doc"]
+    budget = 60 * float(getattr(args, "budget_minutes", 25)) / len(kinds)
+    for kind in kinds:
+        r = gdelt.crawl(kind, date.today(), DATA, budget_s=budget)
+        if r["pending"]:
+            logging.warning("GDELT %s: %d chunks still pending; re-run `ai-news-share gdelt` later", kind, r["pending"])
 
 
 def cmd_snapshot(args) -> None:
@@ -70,6 +77,22 @@ def cmd_report(args) -> None:
     print("  AI share, last 8 weeks:")
     for d in days[-56::7]:
         print(f"    {d}  {pct(ai[d])}")
+    # Growth: doubling time of the odds (topic items : other items)
+    print(f"  Doubling time of the odds, {k}-day window, least squares on ln(odds):")
+    lo_cv = analysis.pooled_log_odds(daily, "covid", k)
+    lo_ai = analysis.pooled_log_odds(daily, "ai", k)
+    last = days[-1]
+    for label, series, w in [
+        ("Covid takeoff", lo_cv, analysis.COVID_TAKEOFF),
+        ("AI since ChatGPT", lo_ai, ("2022-11-30", last)),
+        ("AI last 2 years", lo_ai, ((date.fromisoformat(last) - timedelta(days=730)).isoformat(), last)),
+        ("AI last year", lo_ai, ((date.fromisoformat(last) - timedelta(days=365)).isoformat(), last)),
+    ]:
+        f = analysis.fit_doubling(series, *w)
+        if f is None:
+            continue
+        rate = f"doubles every {f.doubling_days:.0f} days" if f.doubling_days else f"halves every {f.halving_days:.0f} days" if f.halving_days else "flat"
+        print(f"    {label:18s} {w[0]}..{w[1]}  {rate:26s} r²={f.r2:.2f}")
 
 
 def cmd_update(args) -> None:
@@ -86,7 +109,12 @@ def main(argv=None) -> None:
     b = sub.add_parser("backfill")
     b.add_argument("--since", default="2017-01-01")
     b.add_argument("--no-gdelt", action="store_true")
+    b.add_argument("--budget-minutes", type=float, default=25)
     b.set_defaults(fn=cmd_backfill)
+    g = sub.add_parser("gdelt")
+    g.add_argument("--kind", choices=["tv", "doc"])
+    g.add_argument("--budget-minutes", type=float, default=25)
+    g.set_defaults(fn=cmd_gdelt)
     s = sub.add_parser("snapshot")
     s.set_defaults(fn=cmd_snapshot)
     r = sub.add_parser("report")
@@ -95,6 +123,7 @@ def main(argv=None) -> None:
     u = sub.add_parser("update")
     u.add_argument("--since", default="2017-01-01")
     u.add_argument("--no-gdelt", action="store_true")
+    u.add_argument("--budget-minutes", type=float, default=25)
     u.add_argument("--window", type=int, default=7)
     u.set_defaults(fn=cmd_update)
     args = p.parse_args(argv)
