@@ -16,3 +16,6 @@ wheels/
 
 # local tooling
 .claude/
+
+# secrets (keep the real value in 1Password; .env is local only)
+.env
