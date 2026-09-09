@@ -105,9 +105,10 @@ def cmd_report(args) -> None:
     for d in days[-56::7]:
         print(f"    {d}  {pct(ai[d])}")
     # Growth: doubling time of the odds (topic items : other items)
-    print(f"  Doubling time of the odds, {k}-day window, least squares on ln(odds):")
-    lo_cv = analysis.pooled_log_odds(daily, "covid", k)
-    lo_ai = analysis.pooled_log_odds(daily, "ai", k)
+    fk = getattr(args, "fit_window", None) or k
+    print(f"  Doubling time of the odds, {fk}-day window, least squares on ln(odds):")
+    lo_cv = analysis.pooled_log_odds(daily, "covid", fk)
+    lo_ai = analysis.pooled_log_odds(daily, "ai", fk)
     last = days[-1]
     for label, series, w in [
         ("Covid takeoff", lo_cv, analysis.COVID_TAKEOFF),
@@ -158,6 +159,7 @@ def main(argv=None) -> None:
     s.set_defaults(fn=cmd_snapshot)
     r = sub.add_parser("report")
     r.add_argument("--window", type=int, default=7)
+    r.add_argument("--fit-window", type=int, help="window (days) for the doubling-time fits; defaults to --window")
     r.set_defaults(fn=cmd_report)
     u = sub.add_parser("update")
     u.add_argument("--since", default="2017-01-01")

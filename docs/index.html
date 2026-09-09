@@ -89,13 +89,14 @@
   <div class="card">
     <div class="legend" id="legend1"></div>
     <div class="chart"><svg id="hist" viewBox="0 0 960 340"></svg><div class="tip" id="tip1"></div></div>
-    <p class="note">Rolling-window share (or log odds). Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the next section.</p>
+    <p class="note">Rolling-window share (or log odds). Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the next section (computed with the fit window set there).</p>
   </div>
 
   <h2>How fast is it growing? Doubling time of the odds</h2>
   <div class="card">
     <p class="note" style="margin:0 0 10px">A share is capped at 100%, so its growth must saturate; the <b>odds</b> (topic items : all other items) are not. On the log-odds scale exponential growth is a straight line, and the slope of a least-squares fit is a doubling time. Fits below are drawn as dashed lines on the history chart when the log-odds scale is selected.</p>
     <div class="controls" style="margin:0 0 10px">
+      <label>Fit window <input type="number" id="fitk" value="14" min="1" max="120" style="width:58px"> days</label>
       <label>Covid takeoff <input type="date" id="ft0" value="2020-01-15"> → <input type="date" id="ft1" value="2020-03-15"></label>
       <label>AI window <select id="aiwin"><option value="365" selected>last year</option><option value="730">last 2 years</option><option value="chatgpt">since ChatGPT</option><option value="all">all data</option><option value="custom">custom</option></select></label>
       <label><input type="date" id="ai0"> → <input type="date" id="ai1"></label>
@@ -390,7 +391,8 @@ function syncAiWindow(src) { // the select fills the date inputs; the inputs are
   $("ai1").value = last;
 }
 
-function computeFits(src, k) {
+function computeFits(src) {
+  const k = Math.min(120, Math.max(1, +$("fitk").value || 14));
   syncAiWindow(src);
   const loCv = src.logOdds("covid", k), loAi = src.logOdds("ai", k);
   const fits = [["covid", fitDoubling(loCv, $("ft0").value, $("ft1").value)], ["ai", fitDoubling(loAi, $("ai0").value, $("ai1").value)]];
@@ -399,7 +401,7 @@ function computeFits(src, k) {
   const rate = f => f.doubling ? `doubles every ${f.doubling < 60 ? f.doubling.toFixed(0) + " days" : (f.doubling / 365).toFixed(1) + " years"}` : f.halving ? `halves every ${f.halving < 60 ? f.halving.toFixed(0) + " days" : (f.halving / 365).toFixed(1) + " years"}` : "flat";
   $("fits").querySelector("tbody").innerHTML = fits.map(([key, f]) => f ? `<tr><td><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:${COLORS[key]}"></span>${LABELS[key]}</td><td>${f.a} → ${f.b}</td><td class="n">${f.n}</td><td class="n">${rate(f)}</td><td class="n">${f.r2.toFixed(2)}</td></tr>` : `<tr><td>${LABELS[key]}</td><td colspan="4" class="muted">not enough data in window</td></tr>`).join("");
   const c = fits[0][1], a = fits[1][1];
-  $("fitNote").textContent = c && a ? `Read: during its takeoff Covid's odds of being a top story ${rate(c)} (r² ${c.r2.toFixed(2)}). Over the chosen AI window the odds ${rate(a)} (r² ${a.r2.toFixed(2)}); an r² near zero means there is no sustained trend, only spikes. Fits use a ${k}-day window; shorter windows are noisier, longer ones lag.` : "";
+  $("fitNote").textContent = c && a ? `Read: during its takeoff Covid's odds of being a top story ${rate(c)} (r² ${c.r2.toFixed(2)}). Over the chosen AI window the odds ${rate(a)} (r² ${a.r2.toFixed(2)}); an r² near zero means there is no sustained trend, only spikes. Fits use a ${k}-day window for the log odds (set above; the hero and history chart use their own window); shorter windows are noisier, longer ones lag.` : "";
   return fits;
 }
 
@@ -507,7 +509,7 @@ function render() {
   $("hero").innerHTML = `As of ${longDate(cmp.now[0])}, AI is <span class="k-ai">${nowTxt}</span> (${k}-day window). ${verdict}`;
   $("srcNote").textContent = src.note;
   legend($("legend1"), keys); legend($("legend2"), ["ai", "covid"]);
-  const fits = computeFits(src, k);
+  const fits = computeFits(src);
   drawHistory(src, cmp, k, keys, $("yscale").value, fits);
   drawAlign(cmp, k);
   drawMilestones(cmp);
@@ -533,7 +535,7 @@ function render() {
     $("recentNote").insertAdjacentHTML("afterend", `<p class="note">Regex and LLM disagree on ${dis.length} of ${recent.length} recent flagged items (${dis.filter(i => i.topics_llm.ai).length} LLM-only, ${dis.filter(i => i.topics.ai).length} regex-only). Switch the classifier above to compare.</p>`);
   }
   drawTop(top);
-  for (const id of ["source", "clf", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin"]) $(id).addEventListener("input", render);
+  for (const id of ["source", "clf", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin", "fitk"]) $(id).addEventListener("input", render);
   $("clf").addEventListener("input", () => RECENT && drawRecent(RECENT));
   for (const id of ["ai0", "ai1"]) $(id).addEventListener("input", () => { $("aiwin").value = "custom"; render(); });
 })();
