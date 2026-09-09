@@ -96,6 +96,36 @@ def _load(path: Path, kind: str, scope: str) -> dict:
     return st
 
 
+def _merge_from_disk(st: dict, path: Path) -> None:
+    """Union the on-disk file's finished chunks into `st` (without overriding chunks st fetched itself)."""
+    if not path.exists():
+        return
+    try:
+        other = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return
+    for tag, when in other.get("done", {}).items():
+        if tag.endswith(":query"):
+            continue
+        key, year = tag.split(":")
+        if tag not in st["done"] and other["done"].get(f"{key}:query") == st["done"].get(f"{key}:query", other["done"].get(f"{key}:query")):
+            st["done"][tag] = when
+            st["done"].setdefault(f"{key}:query", other["done"].get(f"{key}:query"))
+            series = st["series"].setdefault(key, {})
+            for d, v in other.get("series", {}).get(key, {}).items():
+                if d.startswith(year):
+                    series[d] = v
+            st["series"][key] = dict(sorted(series.items()))
+
+
+def merge_files(a: Path, b: Path, out: Path) -> dict:
+    """Union two gdelt_*.json files (used after a git pull that brought CI's chunks)."""
+    st = json.loads(a.read_text())
+    _merge_from_disk(st, b)
+    out.write_text(json.dumps(st))
+    return st
+
+
 def pending(kind: str, end: date, data_dir: Path) -> list[tuple[str, date, date]]:
     """Chunks not yet fetched (or the current year, if it is stale)."""
     scope = DOC_SCOPE if kind == "doc" else TV_SCOPE
@@ -160,6 +190,7 @@ def crawl(kind: str, end: date, data_dir: Path, *, budget_s: float = 25 * 60) ->
         st["done"][f"{key}:query"] = topic.gdelt_query
         fetched += 1
         st["series"][key] = dict(sorted(series.items()))
+        _merge_from_disk(st, path)  # another crawler (CI, a git pull) may have added chunks meanwhile
         path.write_text(json.dumps(st))
         log.info("gdelt %s %s %d: %d days", kind, key, s.year, len(pts))
     left = len(pending(kind, end, data_dir))
