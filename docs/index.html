@@ -96,16 +96,18 @@
   <div class="card">
     <p class="note" style="margin:0 0 10px">A share is capped at 100%, so its growth must saturate; the <b>odds</b> (topic items : all other items) are not. On the log-odds scale exponential growth is a straight line, and the slope of a least-squares fit is a doubling time. Fits below are drawn as dashed lines on the history chart when the log-odds scale is selected.</p>
     <div class="controls" style="margin:0 0 10px">
-      <label>Fit window <input type="number" id="fitk" value="14" min="1" max="120" style="width:58px"> days</label>
       <label>Covid takeoff <input type="date" id="ft0" value="2020-01-15"> → <input type="date" id="ft1" value="2020-03-15"></label>
+      <label>window <input type="number" id="fitkCv" value="14" min="1" max="120" style="width:58px"> days</label>
+      <span style="flex-basis:100%;height:0"></span>
       <label>AI window <select id="aiwin"><option value="365" selected>last year</option><option value="730">last 2 years</option><option value="chatgpt">since ChatGPT</option><option value="all">all data</option><option value="custom">custom</option></select></label>
       <label><input type="date" id="ai0"> → <input type="date" id="ai1"></label>
+      <label>window <input type="number" id="fitkAi" value="14" min="1" max="120" style="width:58px"> days</label>
     </div>
     <div class="duo">
       <div class="panel"><h3>Covid: log odds of a top story being about Covid</h3><div class="chart"><svg id="fitCv" viewBox="0 0 470 270"></svg><div class="tip" id="tipCv"></div></div></div>
       <div class="panel"><h3>AI: log odds of a top story being about AI</h3><div class="chart"><svg id="fitAi" viewBox="0 0 470 270"></svg><div class="tip" id="tipAi"></div></div></div>
     </div>
-    <table id="fits"><thead><tr><th>Series</th><th>Fit window</th><th class="n">Days</th><th class="n">Odds change</th><th class="n">r²</th></tr></thead><tbody></tbody></table>
+    <table id="fits"><thead><tr><th>Series</th><th>Fit range</th><th class="n">Window</th><th class="n">Days</th><th class="n">Odds change</th><th class="n">r²</th></tr></thead><tbody></tbody></table>
     <p class="note" id="fitNote" style="margin-top:10px"></p>
   </div>
 
@@ -391,17 +393,19 @@ function syncAiWindow(src) { // the select fills the date inputs; the inputs are
   $("ai1").value = last;
 }
 
+const clampK = id => Math.min(120, Math.max(1, +$(id).value || 14));
 function computeFits(src) {
-  const k = Math.min(120, Math.max(1, +$("fitk").value || 14));
+  const kCv = clampK("fitkCv"), kAi = clampK("fitkAi");
   syncAiWindow(src);
-  const loCv = src.logOdds("covid", k), loAi = src.logOdds("ai", k);
+  const loCv = src.logOdds("covid", kCv), loAi = src.logOdds("ai", kAi);
   const fits = [["covid", fitDoubling(loCv, $("ft0").value, $("ft1").value)], ["ai", fitDoubling(loAi, $("ai0").value, $("ai1").value)]];
-  drawFitPanel("fitCv", "tipCv", loCv, fits[0][1], "covid", $("ft0").value, $("ft1").value, src, k);
-  drawFitPanel("fitAi", "tipAi", loAi, fits[1][1], "ai", $("ai0").value, $("ai1").value, src, k);
+  fits[0].push(kCv); fits[1].push(kAi);
+  drawFitPanel("fitCv", "tipCv", loCv, fits[0][1], "covid", $("ft0").value, $("ft1").value, src, kCv);
+  drawFitPanel("fitAi", "tipAi", loAi, fits[1][1], "ai", $("ai0").value, $("ai1").value, src, kAi);
   const rate = f => f.doubling ? `doubles every ${f.doubling < 60 ? f.doubling.toFixed(0) + " days" : (f.doubling / 365).toFixed(1) + " years"}` : f.halving ? `halves every ${f.halving < 60 ? f.halving.toFixed(0) + " days" : (f.halving / 365).toFixed(1) + " years"}` : "flat";
-  $("fits").querySelector("tbody").innerHTML = fits.map(([key, f]) => f ? `<tr><td><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:${COLORS[key]}"></span>${LABELS[key]}</td><td>${f.a} → ${f.b}</td><td class="n">${f.n}</td><td class="n">${rate(f)}</td><td class="n">${f.r2.toFixed(2)}</td></tr>` : `<tr><td>${LABELS[key]}</td><td colspan="4" class="muted">not enough data in window</td></tr>`).join("");
+  $("fits").querySelector("tbody").innerHTML = fits.map(([key, f, kk]) => f ? `<tr><td><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:${COLORS[key]}"></span>${LABELS[key]}</td><td>${f.a} → ${f.b}</td><td class="n">${kk} d</td><td class="n">${f.n}</td><td class="n">${rate(f)}</td><td class="n">${f.r2.toFixed(2)}</td></tr>` : `<tr><td>${LABELS[key]}</td><td colspan="5" class="muted">not enough data in window</td></tr>`).join("");
   const c = fits[0][1], a = fits[1][1];
-  $("fitNote").textContent = c && a ? `Read: during its takeoff Covid's odds of being a top story ${rate(c)} (r² ${c.r2.toFixed(2)}). Over the chosen AI window the odds ${rate(a)} (r² ${a.r2.toFixed(2)}); an r² near zero means there is no sustained trend, only spikes. Fits use a ${k}-day window for the log odds (set above; the hero and history chart use their own window); shorter windows are noisier, longer ones lag.` : "";
+  $("fitNote").textContent = c && a ? `Read: during its takeoff Covid's odds of being a top story ${rate(c)} (r² ${c.r2.toFixed(2)}). Over the chosen AI window the odds ${rate(a)} (r² ${a.r2.toFixed(2)}); an r² near zero means there is no sustained trend, only spikes. Log odds use a ${kCv}-day window for Covid and ${kAi}-day for AI (set above; the hero and history chart use their own window); shorter windows are noisier, longer ones lag.` : "";
   return fits;
 }
 
@@ -535,7 +539,7 @@ function render() {
     $("recentNote").insertAdjacentHTML("afterend", `<p class="note">Regex and LLM disagree on ${dis.length} of ${recent.length} recent flagged items (${dis.filter(i => i.topics_llm.ai).length} LLM-only, ${dis.filter(i => i.topics.ai).length} regex-only). Switch the classifier above to compare.</p>`);
   }
   drawTop(top);
-  for (const id of ["source", "clf", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin", "fitk"]) $(id).addEventListener("input", render);
+  for (const id of ["source", "clf", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin", "fitkCv", "fitkAi"]) $(id).addEventListener("input", render);
   $("clf").addEventListener("input", () => RECENT && drawRecent(RECENT));
   for (const id of ["ai0", "ai1"]) $(id).addEventListener("input", () => { $("aiwin").value = "custom"; render(); });
 })();
