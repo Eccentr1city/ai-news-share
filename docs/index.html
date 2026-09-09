@@ -60,6 +60,10 @@
   details summary { cursor: pointer; color: var(--text-2); }
   code { font-size: 13px; background: var(--grid); padding: 1px 5px; border-radius: 4px; }
   .muted { color: var(--text-3); }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 12px 0 6px; }
+  @media (max-width: 720px) { .duo { grid-template-columns: 1fr; } }
+  .panel h3 { font-size: 13.5px; font-weight: 600; margin: 0 0 4px; color: var(--text-2); }
+  .panel .fitlbl { font-size: 12px; fill: var(--text); font-weight: 600; }
   a { color: var(--accent); }
 </style>
 </head>
@@ -92,7 +96,12 @@
     <p class="note" style="margin:0 0 10px">A share is capped at 100%, so its growth must saturate; the <b>odds</b> (topic items : all other items) are not. On the log-odds scale exponential growth is a straight line, and the slope of a least-squares fit is a doubling time. Fits below are drawn as dashed lines on the history chart when the log-odds scale is selected.</p>
     <div class="controls" style="margin:0 0 10px">
       <label>Covid takeoff <input type="date" id="ft0" value="2020-01-15"> → <input type="date" id="ft1" value="2020-03-15"></label>
-      <label>AI window <select id="aiwin"><option value="365">last year</option><option value="730" selected>last 2 years</option><option value="chatgpt">since ChatGPT (2022-11-30)</option><option value="all">all data</option></select></label>
+      <label>AI window <select id="aiwin"><option value="365" selected>last year</option><option value="730">last 2 years</option><option value="chatgpt">since ChatGPT</option><option value="all">all data</option><option value="custom">custom</option></select></label>
+      <label><input type="date" id="ai0"> → <input type="date" id="ai1"></label>
+    </div>
+    <div class="duo">
+      <div class="panel"><h3>Covid: log odds of a top story being about Covid</h3><div class="chart"><svg id="fitCv" viewBox="0 0 470 270"></svg><div class="tip" id="tipCv"></div></div></div>
+      <div class="panel"><h3>AI: log odds of a top story being about AI</h3><div class="chart"><svg id="fitAi" viewBox="0 0 470 270"></svg><div class="tip" id="tipAi"></div></div></div>
     </div>
     <table id="fits"><thead><tr><th>Series</th><th>Fit window</th><th class="n">Days</th><th class="n">Odds change</th><th class="n">r²</th></tr></thead><tbody></tbody></table>
     <p class="note" id="fitNote" style="margin-top:10px"></p>
@@ -263,7 +272,8 @@ function yScale(vals, top, bottom, log, logit) {
   const ticks = []; for (let t = 0; t <= hi; t += step) ticks.push(+t.toFixed(6));
   return { s: x => bottom - x / hi * (bottom - top), ticks };
 }
-const fmtOdds = lnOdds => { const o = Math.exp(lnOdds); return o >= 1 ? `${o >= 10 ? Math.round(o) : o.toFixed(1)}:1` : `1:${1 / o >= 10 ? Math.round(1 / o).toLocaleString() : (1 / o).toFixed(1)}`; };
+const nice = x => x >= 10 ? Math.round(x).toLocaleString() : String(+x.toFixed(1));
+const fmtOdds = lnOdds => { const o = Math.exp(lnOdds); return o >= 1 ? `${nice(o)}:1` : `1:${nice(1 / o)}`; };
 const fmtV = (v, norm) => { if (norm) return v.toFixed(1) + "×"; const p = v * 100; return (p >= 10 ? Math.round(p) : p >= 1 ? p.toFixed(1) : p >= 0.1 ? p.toFixed(2) : p === 0 ? "0" : p.toFixed(3)) + "%"; };
 function pathOf(pts, sx, sy) {
   let s = "", pen = false;
@@ -368,15 +378,63 @@ function drawAlign(cmp, k) {
   $("alignNote").textContent = `The AI line is the most recent ${tail.length} days of AI coverage, ending today, slid along the axis so that today sits on ${cmp.match ? "the first Covid date with the same " + (cmp.norm ? "multiple of baseline" : "share") : (cmp.aiNow > cmp.peak[1] ? "the end of the window (AI is above Covid's peak)" : "the start of the window (AI is at or below Covid's level there)")}. Covid peaked at ${fmtV(cmp.peak[1], cmp.norm)} on ${cmp.peak[0]} (${k}-day window).${b}`;
 }
 
-function computeFits(src, k) {
+function syncAiWindow(src) { // the select fills the date inputs; the inputs are what the fit uses
   const aiw = $("aiwin").value, last = src.last;
-  const aiA = aiw === "all" ? src.first : aiw === "chatgpt" ? "2022-11-30" : addD(last, -aiw);
-  const fits = [["covid", fitDoubling(src.logOdds("covid", k), $("ft0").value, $("ft1").value)], ["ai", fitDoubling(src.logOdds("ai", k), aiA, last)]];
+  if (aiw === "custom") { if (!$("ai0").value) $("ai0").value = addD(last, -365); if (!$("ai1").value) $("ai1").value = last; return; }
+  $("ai0").value = aiw === "all" ? src.first : aiw === "chatgpt" ? "2022-11-30" : addD(last, -aiw);
+  $("ai1").value = last;
+}
+
+function computeFits(src, k) {
+  syncAiWindow(src);
+  const loCv = src.logOdds("covid", k), loAi = src.logOdds("ai", k);
+  const fits = [["covid", fitDoubling(loCv, $("ft0").value, $("ft1").value)], ["ai", fitDoubling(loAi, $("ai0").value, $("ai1").value)]];
+  drawFitPanel("fitCv", "tipCv", loCv, fits[0][1], "covid", $("ft0").value, $("ft1").value, src, k);
+  drawFitPanel("fitAi", "tipAi", loAi, fits[1][1], "ai", $("ai0").value, $("ai1").value, src, k);
   const rate = f => f.doubling ? `doubles every ${f.doubling < 60 ? f.doubling.toFixed(0) + " days" : (f.doubling / 365).toFixed(1) + " years"}` : f.halving ? `halves every ${f.halving < 60 ? f.halving.toFixed(0) + " days" : (f.halving / 365).toFixed(1) + " years"}` : "flat";
   $("fits").querySelector("tbody").innerHTML = fits.map(([key, f]) => f ? `<tr><td><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:${COLORS[key]}"></span>${LABELS[key]}</td><td>${f.a} → ${f.b}</td><td class="n">${f.n}</td><td class="n">${rate(f)}</td><td class="n">${f.r2.toFixed(2)}</td></tr>` : `<tr><td>${LABELS[key]}</td><td colspan="4" class="muted">not enough data in window</td></tr>`).join("");
   const c = fits[0][1], a = fits[1][1];
   $("fitNote").textContent = c && a ? `Read: during its takeoff Covid's odds of being a top story ${rate(c)} (r² ${c.r2.toFixed(2)}). Over the chosen AI window the odds ${rate(a)} (r² ${a.r2.toFixed(2)}); an r² near zero means there is no sustained trend, only spikes. Fits use a ${k}-day window; shorter windows are noisier, longer ones lag.` : "";
   return fits;
+}
+
+function drawFitPanel(svgId, tipId, lo, fit, key, a, b, src, k) {
+  const svg = $(svgId), W = 470, H = 270, L = 58, R = 14, T = 30, B = 30;
+  const pts = lo.filter(([d, v]) => d >= a && d <= b);
+  if (pts.length < 2) { svg.innerHTML = `<text class="lbl" x="${L}" y="${H / 2}">No data in this window.</text>`; return; }
+  const t0 = toT(a), t1 = toT(b);
+  const sx = d => lin(t0, t1, L, W - R)(toT(d));
+  const vals = pts.map(x => x[1]).concat(fit ? [fit.at(a), fit.at(b)] : []);
+  const { s: sy, ticks } = yScale(vals, T, H - B, false, true);
+  let g = `<g class="grid">${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/>`).join("")}</g>`;
+  g += `<g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fmtOdds(v)}</text>`).join("")}`;
+  // x ticks: month starts if the window is short, else year starts
+  const days = (t1 - t0) / 864e5; const fmtTick = d => new Date(toT(d)).toLocaleDateString("en-US", days > 800 ? { year: "numeric", timeZone: "UTC" } : days > 200 ? { month: "short", year: "2-digit", timeZone: "UTC" } : { month: "short", day: "numeric", timeZone: "UTC" });
+  let step = days > 800 ? "year" : days > 200 ? "month" : days > 70 ? "month" : "halfmonth";
+  for (const [d] of pts) {
+    const isTick = step === "year" ? d.endsWith("-01-01") : step === "month" ? d.endsWith("-01") : (d.endsWith("-01") || d.endsWith("-15"));
+    if (isTick) g += `<line x1="${sx(d)}" x2="${sx(d)}" y1="${H - B}" y2="${H - B + 5}"/><text x="${sx(d)}" y="${H - 10}" text-anchor="middle">${fmtTick(d)}</text>`;
+  }
+  g += `</g>`;
+  if (key === "covid") { // milestone hairlines (hover for names)
+    g += `<g class="ms">${COVID_MS.filter(([d]) => d >= a && d <= b).map(([d]) => `<line x1="${sx(d)}" x2="${sx(d)}" y1="${T}" y2="${H - B}" opacity=".35"/>`).join("")}</g>`;
+  }
+  g += `<path class="series" d="${pathOf(pts, sx, sy)}" stroke="${COLORS[key]}"/>`;
+  if (fit) {
+    g += `<path d="M${sx(a).toFixed(1)} ${sy(fit.at(a)).toFixed(1)}L${sx(b).toFixed(1)} ${sy(fit.at(b)).toFixed(1)}" fill="none" stroke="${COLORS[key]}" stroke-width="2" stroke-dasharray="6 5" opacity=".9"/>`;
+    const txt = fit.doubling ? `odds double every ${fit.doubling < 90 ? fit.doubling.toFixed(0) + " days" : (fit.doubling / 365).toFixed(1) + " years"}` : fit.halving ? `odds halve every ${fit.halving < 90 ? fit.halving.toFixed(0) + " days" : (fit.halving / 365).toFixed(1) + " years"}` : "no trend";
+    g += `<text class="fitlbl" x="${L}" y="${T - 12}">${txt}</text><text class="lbl" x="${W - R}" y="${T - 12}" text-anchor="end">r² ${fit.r2.toFixed(2)} · ${k}-day window</text>`;
+  }
+  svg.innerHTML = g;
+  const byDate = new Map(pts);
+  hover(svg, $(tipId), { L, R, T, B, W, H, xOf: sx, dateAt: x => fmtD(lin(L, W - R, t0, t1)(x)), rows: d => {
+    const v = byDate.get(d); if (v == null) return null;
+    const out = [{ text: `<b>${longDate(d)}</b>` }, { key, label: "odds", value: fmtOdds(v) }];
+    if (src.kind === "count") { const [x, n] = src.counts(key, d); out.push({ text: `<span class="muted">${x} of ${n} items that day</span>` }); }
+    if (fit) out.push({ text: `<span class="muted">fit: ${fmtOdds(fit.at(d))}</span>` });
+    const ms = key === "covid" && COVID_MS.find(([m]) => m === d); if (ms) out.push({ text: `<span class="muted">${ms[1]}</span>` });
+    return out;
+  } });
 }
 
 function drawMilestones(cmp) {
@@ -460,6 +518,7 @@ function render() {
   if (recent) drawRecent(recent);
   drawTop(top);
   for (const id of ["source", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin"]) $(id).addEventListener("input", render);
+  for (const id of ["ai0", "ai1"]) $(id).addEventListener("input", () => { $("aiwin").value = "custom"; render(); });
 })();
 </script>
 </body>
