@@ -66,7 +66,7 @@ COVID = Topic(
         r"wuhan (?:virus|pneumonia|outbreak)", r"omicron", r"delta variant",
         r"pfizer(?:-biontech)?", r"moderna", r"astrazeneca", r"novavax",
     ),
-    gdelt_query='(coronavirus OR covid OR "covid-19" OR "wuhan virus" OR pandemic OR lockdown OR quarantine)',
+    gdelt_query='(coronavirus OR covid OR "covid-19" OR "sars-cov-2" OR "wuhan virus" OR "wuhan pneumonia")',
     color="#1d4ed8",
 )
 

@@ -135,11 +135,17 @@ def compare(
     ai_b = baseline(ai, *ai_baseline_window)
     cv_b = baseline(covid, *covid_baseline_window)
     notes = []
+    first_day = min(win)
     match = first_reach(win, ai_now, w0, w1)
-    if match is None:
-        notes.append("AI is above Covid's peak in this window" if ai_now > win[peak_d] else "AI is below Covid's lowest point in this window")
+    if match == first_day:  # Covid was already at least this loud when the window opens: not a date
+        match = None
+        notes.append(f"AI is at or below Covid's level at the start of the window ({first_day})")
+    elif match is None:
+        notes.append("AI is above Covid's peak in this window")
     match_norm = ai_now_norm = None
     if ai_b and cv_b:
         ai_now_norm = ai_now / ai_b
         match_norm = first_reach({d: v / cv_b for d, v in win.items()}, ai_now_norm, w0, w1)
+        if match_norm == first_day:
+            match_norm = None
     return Comparison(ai_date, ai_now, ai_now_norm, covid_window, (peak_d, win[peak_d]), match, match_norm, ai_b, cv_b, notes)

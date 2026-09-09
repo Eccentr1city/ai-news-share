@@ -38,3 +38,11 @@ def test_compare_above_peak():
     cmp = analysis.compare(ai, covid)
     assert cmp.match_date is None
     assert "above" in cmp.notes[0]
+
+
+def test_compare_match_on_window_start_is_not_a_date():
+    covid = {"2019-12-01": 0.2, "2020-01-15": 0.3, "2020-03-15": 0.9}
+    ai = {"2026-09-01": 0.1}
+    cmp = analysis.compare(ai, covid)
+    assert cmp.match_date is None
+    assert "start of the window" in cmp.notes[0]

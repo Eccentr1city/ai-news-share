@@ -203,8 +203,11 @@ function compare(ai, cv, { cv0, cv1, mode }) {
   const aiNow = f(now[1], true);
   const winN = win.map(([d, v]) => [d, f(v, false)]);
   const peak = winN.reduce((m, x) => x[1] > m[1] ? x : m, ["", -Infinity]);
-  const match = winN.find(x => x[1] >= aiNow)?.[0] ?? null;
-  return { now, aiNow, aiBase, cvBase, norm, win: winN, peak, match, aiNorm: ai.map(([d, v]) => [d, v == null ? null : f(v, true)]), cvNorm: cv.map(([d, v]) => [d, v == null ? null : f(v, false)]) };
+  let match = winN.find(x => x[1] >= aiNow)?.[0] ?? null;
+  // A match on the window's first day means Covid was already at least this loud when the
+  // window opens; that is "at or below the start", not a date.
+  const belowStart = match === winN[0][0]; if (belowStart) match = null;
+  return { now, aiNow, aiBase, cvBase, norm, win: winN, peak, match, belowStart, aiNorm: ai.map(([d, v]) => [d, v == null ? null : f(v, true)]), cvNorm: cv.map(([d, v]) => [d, v == null ? null : f(v, false)]) };
 }
 
 // ---------- drawing ----------
@@ -222,7 +225,7 @@ function yScale(vals, top, bottom, log) {
   const ticks = []; for (let t = 0; t <= hi; t += step) ticks.push(+t.toFixed(6));
   return { s: x => bottom - x / hi * (bottom - top), ticks };
 }
-const fmtV = (v, norm) => norm ? v.toFixed(1) + "×" : (v * 100 < 10 ? (v * 100).toFixed(1) : Math.round(v * 100)) + "%";
+const fmtV = (v, norm) => { if (norm) return v.toFixed(1) + "×"; const p = v * 100; return (p >= 10 ? Math.round(p) : p >= 1 ? p.toFixed(1) : p >= 0.1 ? p.toFixed(2) : p === 0 ? "0" : p.toFixed(3)) + "%"; };
 function pathOf(pts, sx, sy) {
   let s = "", pen = false;
   for (const [x, y] of pts) { if (y == null || !isFinite(sy(y))) { pen = false; continue; } s += (pen ? "L" : "M") + sx(x).toFixed(1) + " " + sy(y).toFixed(1); pen = true; }
@@ -317,7 +320,7 @@ function drawAlign(cmp, k) {
     return out.length ? out : null;
   } });
   const b = cmp.norm ? ` Baselines: AI ${fmtV(cmp.aiBase)} (2017 mean), Covid ${fmtV(cmp.cvBase)} (Jan–Nov 2019 mean).` : "";
-  $("alignNote").textContent = `The AI line is the most recent ${tail.length} days of AI coverage, ending today, slid along the axis so that today sits on ${cmp.match ? "the first Covid date with the same " + (cmp.norm ? "multiple of baseline" : "share") : (cmp.aiNow > cmp.peak[1] ? "the end of the window (AI is above Covid's peak)" : "the start of the window (AI is below Covid's lowest point)")}. Covid peaked at ${fmtV(cmp.peak[1], cmp.norm)} on ${cmp.peak[0]} (${k}-day window).${b}`;
+  $("alignNote").textContent = `The AI line is the most recent ${tail.length} days of AI coverage, ending today, slid along the axis so that today sits on ${cmp.match ? "the first Covid date with the same " + (cmp.norm ? "multiple of baseline" : "share") : (cmp.aiNow > cmp.peak[1] ? "the end of the window (AI is above Covid's peak)" : "the start of the window (AI is at or below Covid's level there)")}. Covid peaked at ${fmtV(cmp.peak[1], cmp.norm)} on ${cmp.peak[0]} (${k}-day window).${b}`;
 }
 
 function drawMilestones(cmp) {
@@ -376,7 +379,7 @@ function render() {
     const ne = daysBetween(cmp.match, "2020-03-13");
     verdict = `Covid coverage first reached that level on <span class="k-cv num">${longDate(cmp.match)}</span>, ${ne > 0 ? `${ne} days before the national emergency` : ne === 0 ? "the day of the national emergency" : `${-ne} days after the national emergency`}.`;
   } else if (cmp.aiNow > cmp.peak[1]) verdict = `That is <b>above Covid's peak</b> in this window (${fmtV(cmp.peak[1], cmp.norm)} on ${cmp.peak[0]}).`;
-  else verdict = `Covid never fell that low in this window: AI is <b>below where Covid started</b> on ${cmp.win[0][0]} (${fmtV(cmp.win[0][1], cmp.norm)}).`;
+  else verdict = `That is <b>at or below where Covid already was</b> when the window opens on ${cmp.win[0][0]} (${fmtV(cmp.win[0][1], cmp.norm)}); move the window start earlier to find a date.`;
   $("hero").innerHTML = `As of ${longDate(cmp.now[0])}, AI is <span class="k-ai">${nowTxt}</span> (${k}-day window). ${verdict}`;
   $("srcNote").textContent = src.note;
   legend($("legend1"), keys); legend($("legend2"), ["ai", "covid"]);
