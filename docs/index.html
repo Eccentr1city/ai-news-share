@@ -497,7 +497,7 @@ function render() {
   const cmp = compare(ai, cv, { cv0, cv1, mode });
   if (!cmp) { $("hero").textContent = "Not enough data for a comparison."; return; }
   const keys = ["ai", "covid", ...($("showClimate").checked ? ["climate"] : [])];
-  const nowTxt = cmp.norm ? `<span class="num">${cmp.aiNow.toFixed(1)}×</span> its 2017 baseline (${fmtV(cmp.now[1])} of ${src.kind === "count" ? "items" : "coverage"})` : `<span class="num">${fmtV(cmp.now[1])}</span> of ${src.kind === "count" ? "curated news items" : src.unit}`;
+  const nowTxt = cmp.norm ? `<span class="num">${cmp.aiNow.toFixed(1)}×</span> its 2017 baseline (${fmtV(cmp.now[1])} of ${src.unit})` : `<span class="num">${fmtV(cmp.now[1])}</span> of ${src.unit}`;
   let verdict;
   if (cmp.match) {
     const ne = daysBetween(cmp.match, "2020-03-13");
@@ -516,8 +516,8 @@ function render() {
 
 (async () => {
   const [wiki, nyt, tv, doc, recent, top] = await Promise.all([loadJson("data/wiki_daily.json"), loadJson("data/nyt_daily.json"), loadJson("data/gdelt_tv.json"), loadJson("data/gdelt_doc.json"), loadJson("data/wiki_recent.json"), loadJsonl("data/topstories.jsonl")]);
-  if (wiki) { const s = countSource(wiki.daily); s.note = `Wikipedia Current Events: ${Object.keys(wiki.daily).length} days, ${Object.values(wiki.daily).reduce((a, r) => a + r.n, 0).toLocaleString()} curated news items since ${s.first}. Share = AI items ÷ all items in the window.`; SOURCES.wiki = s; }
-  if (nyt && Object.keys(nyt.daily).length > 60) { const s = countSource(nyt.daily); s.note = `New York Times front page (Archive API, articles printed on page A1): ${Object.keys(nyt.daily).length} days, ${Object.values(nyt.daily).reduce((a, r) => a + r.n, 0).toLocaleString()} A1 articles since ${s.first}. Share = AI articles ÷ all A1 articles in the window.`; SOURCES.nyt = s; }
+  if (wiki) { const s = countSource(wiki.daily); s.unit = "curated news items"; s.note = `Wikipedia Current Events: ${Object.keys(wiki.daily).length} days, ${Object.values(wiki.daily).reduce((a, r) => a + r.n, 0).toLocaleString()} curated news items since ${s.first}. Share = AI items ÷ all items in the window.`; SOURCES.wiki = s; }
+  if (nyt && Object.keys(nyt.daily).length > 60) { const s = countSource(nyt.daily); s.unit = "NYT front-page articles"; s.note = `New York Times front page (Archive API, articles printed on page A1): ${Object.keys(nyt.daily).length} days, ${Object.values(nyt.daily).reduce((a, r) => a + r.n, 0).toLocaleString()} A1 articles since ${s.first}. Share = AI articles ÷ all A1 articles in the window.`; SOURCES.nyt = s; }
   const has = j => j && ["ai", "covid"].every(k => Object.keys(j.series[k] || {}).length);
   if (has(tv)) { const s = pctSource(tv.series); s.unit = "cable-news airtime"; s.note = `GDELT TV: percent of 15-second clips on CNN, Fox News and MSNBC mentioning the topic (station average), through ${s.last}.`; SOURCES.tv = s; }
   if (has(doc)) { const s = pctSource(doc.series); s.unit = "US online news articles"; s.note = `GDELT DOC: percent of all monitored US English online articles matching the topic query, through ${s.last}.`; SOURCES.doc = s; }
