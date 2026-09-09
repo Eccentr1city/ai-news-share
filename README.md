@@ -92,6 +92,21 @@ git-ignored `.env` (see `.env.example`) or the environment, run
 dashboard. For the daily job, add the key as a repository secret named
 `NYT_API_KEY`. Media Cloud is not wired in yet.
 
+## LLM classifier (optional, recommended)
+
+The regex classifier is reproducible and free, but it has edges. With an
+Anthropic API key (`ANTHROPIC_API_KEY` in `.env` or the environment, and a
+repository secret of the same name for the daily job), `ai-news-share llm`
+labels every item with a small Claude model (`claude-haiku-4-5` by default,
+override with `AI_NEWS_LLM_MODEL`) against a fixed rubric in
+`src/ai_news_share/llm_classify.py`. Items go 25 per request with a JSON
+schema; labels are cached by text hash in `docs/data/llm_labels.jsonl` so each
+item is billed once. Backlogs above 500 items go through the Message Batches
+API at half price (run `llm` again later to ingest the results); the daily
+increment runs synchronously. The whole 2017 → today backlog (~74k items) is
+a few dollars. The dashboard then offers a **Classifier: regex / LLM** switch,
+and the recent-items panel reports where the two disagree.
+
 ## Honest caveats
 
 - **Wikipedia's portal is global and event-shaped.** It records things that

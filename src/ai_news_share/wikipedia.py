@@ -19,7 +19,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from . import http
+from . import http, labels
 from .topics import TOPICS
 
 log = logging.getLogger(__name__)
@@ -172,6 +172,9 @@ def backfill(start: date, end: date, data_dir: Path, *, refresh_days: int = 14) 
         for it in day_items:
             full = f"{it['context']} {it['section']} {it['text']}"
             it["topics"] = {k: t.matches(full) for k, t in TOPICS.items()}
+    for day_items in existing.values():
+        for it in day_items:
+            it["topics_llm"] = labels.llm_topics(data_dir, " > ".join(x for x in (it["context"], it["text"]) if x))
     with items_path.open("w") as f:
         for day in sorted(existing):
             for it in existing[day]:
@@ -184,11 +187,11 @@ def write_recent(by_day: dict[str, list[dict]], path: Path, end: date, days: int
     """Small file for the dashboard: every topic-matching item from the last `days` days."""
     since = (end - timedelta(days=days)).isoformat()
     recent = [
-        {k: it[k] for k in ("date", "section", "context", "text", "sources", "topics")}
+        {k: it.get(k) for k in ("date", "section", "context", "text", "sources", "topics", "topics_llm")}
         for day in sorted(by_day)
         if day >= since
         for it in by_day[day]
-        if any(it["topics"].values())
+        if any(it["topics"].values()) or any((it.get("topics_llm") or {}).values())
     ]
     path.write_text(json.dumps(recent, ensure_ascii=False))
 
@@ -200,6 +203,8 @@ def write_daily(by_day: dict[str, list[dict]], path: Path) -> None:
         row = {"n": len(its)}
         for k in TOPICS:
             row[k] = sum(1 for it in its if it["topics"].get(k))
+        for it in its:
+            labels.add_llm_counts(row, it.get("topics_llm"))
         daily[day] = row
     path.write_text(
         json.dumps(

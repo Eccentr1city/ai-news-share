@@ -20,7 +20,8 @@ import time
 from datetime import date
 from pathlib import Path
 
-from . import http
+from . import http, labels
+from .config import env
 from .topics import TOPICS
 
 log = logging.getLogger(__name__)
@@ -31,14 +32,7 @@ START = date(2017, 1, 1)
 
 
 def api_key() -> str | None:
-    if os.environ.get("NYT_API_KEY"):
-        return os.environ["NYT_API_KEY"]
-    env = Path(__file__).resolve().parents[2] / ".env"
-    if env.exists():
-        for line in env.read_text().splitlines():
-            if line.strip().startswith("NYT_API_KEY="):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return None
+    return env("NYT_API_KEY")
 
 
 FRONT_SECTION = "A"  # A1 = the front page; B1/C1/D1 are section fronts
@@ -132,6 +126,7 @@ def _write(by_month: dict[str, list[dict]], done: set[str], items_path: Path, da
             for it in by_month[tag]:
                 text = f"{it['headline']} {it['abstract']}"
                 it["topics"] = {k: t.matches(text) for k, t in TOPICS.items()}
+                it["topics_llm"] = labels.llm_topics(items_path.parent, text.strip()) if is_front_page(it) else None
                 f.write(json.dumps(it, ensure_ascii=False) + "\n")
                 if not is_front_page(it):
                     continue
@@ -139,6 +134,7 @@ def _write(by_month: dict[str, list[dict]], done: set[str], items_path: Path, da
                 row["n"] += 1
                 for k in TOPICS:
                     row[k] += int(it["topics"][k])
+                labels.add_llm_counts(row, it["topics_llm"])
     daily_path.write_text(
         json.dumps(
             {
