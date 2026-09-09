@@ -37,11 +37,11 @@ AI = Topic(
         r"|artificial[ -]intelligence|artificial general intelligence|superintelligen\w*"
         r"|machine[ -]learning|deep[ -]learning|neural network\w*|large language model\w*"
         r"|language model\w*|foundation model\w*|generative (?:ai|model\w*)"
-        r"|chatbots?|deepfakes?|autonomous (?:weapon|vehicle)s?|self-driving"
+        r"|chatbots?|deepfakes?|autonomous weapons?"
         r"|OpenAI|ChatGPT|GPT-?\d\w*|Anthropic|Claude \d|DeepMind|Gemini (?:\d|AI|model)|Google Gemini"
         r"|Nvidia|Copilot|Midjourney|Stable Diffusion|DALL[- ]E|Sora|DeepSeek|xAI|Grok|Mistral AI"
         r"|Sam Altman|Dario Amodei|Demis Hassabis|Geoffrey Hinton|Yoshua Bengio"
-        r"|AlphaGo|AlphaFold|Waymo|Tesla Autopilot|Full Self-Driving"
+        r"|AlphaGo|AlphaFold"
         r")(?![\w-])",
         re.I,
     ),

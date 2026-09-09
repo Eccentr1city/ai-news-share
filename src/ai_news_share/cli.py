@@ -32,7 +32,7 @@ def cmd_backfill(args) -> None:
 
 
 def cmd_nyt(args) -> None:
-    if not nyt.backfill(DATA, budget_s=60 * args.budget_minutes):
+    if not nyt.backfill(DATA, budget_s=60 * args.budget_minutes, refetch_from=args.refetch_from):
         sys.exit("NYT_API_KEY is not set (environment or .env); see README")
 
 
@@ -124,6 +124,7 @@ def main(argv=None) -> None:
     g.set_defaults(fn=cmd_gdelt)
     n = sub.add_parser("nyt")
     n.add_argument("--budget-minutes", type=float, default=40)
+    n.add_argument("--refetch-from", metavar="YYYY-MM", help="discard cached months from this month on")
     n.set_defaults(fn=cmd_nyt)
     s = sub.add_parser("snapshot")
     s.set_defaults(fn=cmd_snapshot)

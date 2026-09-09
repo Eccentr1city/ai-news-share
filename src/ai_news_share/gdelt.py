@@ -138,14 +138,12 @@ def crawl(kind: str, end: date, data_dir: Path, *, budget_s: float = 25 * 60) ->
             pts = _timeline(url, f"{topic.gdelt_query} {scope}", s, e)
         except Throttled as ex:
             throttles += 1
-            if throttles > len(BACKOFF):
-                log.warning("gdelt %s: throttled repeatedly, giving up for this run", kind)
-                break
-            wait = BACKOFF[throttles - 1]
+            wait = BACKOFF[min(throttles, len(BACKOFF)) - 1]  # stay at the longest backoff while budget remains
             log.warning("gdelt %s throttled (%s); sleeping %ds", kind, str(ex)[:60], wait)
             if time.monotonic() - t0 + wait > budget_s:
                 break
             time.sleep(wait)
+            todo.append((key, s, e))  # retry this chunk after the others
             continue
         except (httpx.HTTPError, RuntimeError, json.JSONDecodeError) as ex:
             log.warning("gdelt %s %s %s: %s", kind, key, s.year, str(ex)[:120])

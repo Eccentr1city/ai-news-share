@@ -26,6 +26,7 @@ def test_ai_positive(text):
         "The gemini constellation rises",
         "Hurricane Ai makes landfall",  # lowercase 'ai' is not the acronym
         "Thai protests continue",
+        "Uber self-driving car kills pedestrian",  # not the AI discourse we track
     ],
 )
 def test_ai_negative(text):

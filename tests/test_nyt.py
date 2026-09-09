@@ -13,11 +13,17 @@ DOC = {
 }
 
 
-def test_front_page_filter():
-    assert nyt.is_front_page(DOC)
-    assert not nyt.is_front_page({**DOC, "print_page": "12"})
-    assert not nyt.is_front_page({**DOC, "print_page": None})
-    assert not nyt.is_front_page({**DOC, "document_type": "multimedia"})
+def test_page_one_filter():
+    assert nyt.is_page_one(DOC)
+    assert nyt.is_page_one({**DOC, "document_type": "Article"})  # capitalized since 2025
+    assert not nyt.is_page_one({**DOC, "print_page": "12"})
+    assert not nyt.is_page_one({**DOC, "print_page": None})
+    assert not nyt.is_page_one({**DOC, "document_type": "multimedia"})
+
+
+def test_front_page_is_section_a():
+    assert nyt.is_front_page(nyt.item_from_doc(DOC))
+    assert not nyt.is_front_page(nyt.item_from_doc({**DOC, "print_section": "B"}))
 
 
 def test_item_classification():
