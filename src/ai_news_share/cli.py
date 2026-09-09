@@ -3,6 +3,7 @@
   ai-news-share backfill [--since 2017-01-01] [--no-gdelt]   fetch/refresh all history
   ai-news-share gdelt [--budget-minutes 25] [--kind tv|doc]  slow, cached GDELT crawl (safe to re-run)
   ai-news-share nyt                                          NYT front page (needs NYT_API_KEY; resumable)
+  ai-news-share llm [--status] [--sync]                      LLM topic labels (needs ANTHROPIC_API_KEY)
   ai-news-share snapshot                                     append today's Google News top stories
   ai-news-share report                                       print the headline comparison
   ai-news-share update                                       backfill + snapshot + report (what CI runs)
@@ -16,7 +17,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import analysis, gdelt, googlenews, nyt, wikipedia
+from . import analysis, gdelt, googlenews, llm_classify, nyt, wikipedia
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "docs" / "data"
@@ -43,6 +44,18 @@ def cmd_gdelt(args) -> None:
         r = gdelt.crawl(kind, date.today(), DATA, budget_s=budget)
         if r["pending"]:
             logging.warning("GDELT %s: %d chunks still pending; re-run `ai-news-share gdelt` later", kind, r["pending"])
+
+
+def cmd_llm(args) -> None:
+    if getattr(args, "status", False):
+        print(json.dumps(llm_classify.status(DATA), indent=1))
+        return
+    r = llm_classify.run(DATA, force_sync=getattr(args, "sync", False))
+    print(json.dumps(r))
+    if not r.get("skipped") and (r.get("ingested") or r.get("labeled_sync")):
+        # Labels changed: rewrite the daily files without refetching anything.
+        wikipedia.backfill(date.today(), date.today() - timedelta(days=1), DATA)
+        nyt.backfill(DATA, date.today(), date.today())
 
 
 def cmd_snapshot(args) -> None:
@@ -104,6 +117,7 @@ def cmd_report(args) -> None:
 
 def cmd_update(args) -> None:
     cmd_backfill(args)
+    cmd_llm(args)
     cmd_snapshot(args)
     cmd_report(args)
 
@@ -126,6 +140,10 @@ def main(argv=None) -> None:
     n.add_argument("--budget-minutes", type=float, default=40)
     n.add_argument("--refetch-from", metavar="YYYY-MM", help="discard cached months from this month on")
     n.set_defaults(fn=cmd_nyt)
+    l = sub.add_parser("llm")
+    l.add_argument("--status", action="store_true")
+    l.add_argument("--sync", action="store_true", help="label synchronously even if the backlog is large")
+    l.set_defaults(fn=cmd_llm)
     s = sub.add_parser("snapshot")
     s.set_defaults(fn=cmd_snapshot)
     r = sub.add_parser("report")

@@ -77,6 +77,7 @@
     <div class="controls">
       <label>Source <select id="source"></select></label>
       <label>Window <select id="win"><option>7</option><option selected>14</option><option>28</option><option>56</option></select> days</label>
+      <label id="clfWrap" hidden>Classifier <select id="clf"><option value="">regex</option><option value="_llm">LLM (Claude)</option></select></label>
       <label>Match on <select id="mode"><option value="level">coverage level</option><option value="mult">multiple of own baseline</option></select></label>
       <label><input type="checkbox" id="showClimate"> show climate as a reference</label>
       <label>Y scale <select id="yscale"><option value="lin">linear</option><option value="log">log</option><option value="logit">log odds (topic : rest)</option></select></label>
@@ -181,12 +182,16 @@ const daysBetween = (a, b) => Math.round((toT(b) - toT(a)) / 864e5);
 // A "source" exposes: series(topic, k) -> [[date, value|null]...] where value is a share in [0,1].
 function countSource(daily) {
   const days = Object.keys(daily).sort();
+  let sfx = ""; // "" = regex columns (ai, n); "_llm" = LLM columns (ai_llm, n_llm)
+  const cnt = (r, topic) => r ? [r[topic + sfx] || 0, sfx ? (r.n_llm || 0) : r.n] : [0, 0];
   return {
     kind: "count", first: days[0], last: days[days.length - 1],
+    hasLlm: Object.values(daily).some(r => r.n_llm),
+    setClassifier(x) { sfx = x; },
     series(topic, k) {
       const out = []; const buf = [];
       for (let d = days[0]; d <= days[days.length - 1]; d = addD(d, 1)) {
-        const r = daily[d]; buf.push(r ? [r[topic] || 0, r.n] : [0, 0]); if (buf.length > k) buf.shift();
+        const r = daily[d]; buf.push(cnt(r, topic)); if (buf.length > k) buf.shift();
         const n = buf.reduce((a, b) => a + b[1], 0);
         out.push([d, n ? buf.reduce((a, b) => a + b[0], 0) / n : null, n]);
       }
@@ -196,13 +201,13 @@ function countSource(daily) {
     logOdds(topic, k) {
       const out = []; const buf = [];
       for (let d = days[0]; d <= days[days.length - 1]; d = addD(d, 1)) {
-        const r = daily[d]; buf.push(r ? [r[topic] || 0, r.n] : [0, 0]); if (buf.length > k) buf.shift();
+        const r = daily[d]; buf.push(cnt(r, topic)); if (buf.length > k) buf.shift();
         const x = buf.reduce((a, b) => a + b[0], 0), n = buf.reduce((a, b) => a + b[1], 0);
         out.push([d, n ? Math.log((x + 0.5) / (n - x + 0.5)) : null]);
       }
       return out;
     },
-    counts(topic, d) { const r = daily[d]; return r ? [r[topic] || 0, r.n] : [0, 0]; },
+    counts(topic, d) { return cnt(daily[d], topic); },
   };
 }
 const logit = (p, floor = 1e-5) => { p = Math.min(Math.max(p, floor), 1 - floor); return Math.log(p / (1 - p)); };
@@ -469,9 +474,12 @@ function drawTop(rows) {
   hover(svg, $("tip3"), { L, R, T, B, W, H, xOf: sx, dateAt: x => fmtD(lin(L, W - R, t0, t1)(x)), rows: d => { const p = pts.reduce((m, q) => Math.abs(toT(q[0]) - toT(d)) < Math.abs(toT(m[0]) - toT(d)) ? q : m); return [{ text: `<b>${longDate(p[0])}</b>` }, { key: "ai", label: "AI", value: `${p[2].ai} / ${p[2].n} = ${fmtV(p[1])}` }]; } });
 }
 
+let RECENT = null;
 function drawRecent(items) {
-  const ai = items.filter(i => i.topics.ai).reverse();
-  $("recentNote").textContent = ai.length ? `${ai.length} AI-tagged items in the last ~120 days of Wikipedia Current Events. If something here is not really about AI, the regex in topics.py needs tightening.` : "No recent AI items found.";
+  RECENT = items;
+  const llm = $("clf").value === "_llm";
+  const ai = items.filter(i => llm ? i.topics_llm?.ai : i.topics.ai).reverse();
+  $("recentNote").textContent = ai.length ? `${ai.length} items tagged AI by the ${llm ? "LLM" : "regex"} classifier in the last ~120 days of Wikipedia Current Events.${llm ? "" : " If something here is not really about AI, the regex in topics.py needs tightening."}` : "No recent AI items found.";
   $("recent").innerHTML = ai.slice(0, 60).map(i => `<li><span class="d">${i.date}</span>${i.context ? `<span class="ctx">${i.context} › </span>` : ""}${i.text}${i.sources?.length ? ` <span class="muted">(${i.sources.slice(0, 2).join(", ")})</span>` : ""}</li>`).join("");
 }
 
@@ -482,6 +490,8 @@ async function loadJsonl(p) { try { const r = await fetch(p); return r.ok ? (awa
 
 function render() {
   const src = SOURCES[$("source").value]; if (!src) return;
+  $("clfWrap").hidden = !src.hasLlm; if (!src.hasLlm) $("clf").value = "";
+  if (src.setClassifier) src.setClassifier($("clf").value);
   const k = +$("win").value, mode = $("mode").value, cv0 = $("cv0").value, cv1 = $("cv1").value;
   const ai = src.series("ai", k), cv = src.series("covid", k);
   const cmp = compare(ai, cv, { cv0, cv1, mode });
@@ -516,8 +526,14 @@ function render() {
   if (!Object.keys(SOURCES).length) { $("hero").innerHTML = `No data found. Run <code>uv run ai-news-share backfill</code> and serve the <code>docs/</code> folder.`; return; }
   render();
   if (recent) drawRecent(recent);
+  // "Compare classifiers": disagreements are the interesting audit set
+  if (recent && recent.some(i => i.topics_llm)) {
+    const dis = recent.filter(i => i.topics_llm && i.topics_llm.ai !== i.topics.ai);
+    $("recentNote").insertAdjacentHTML("afterend", `<p class="note">Regex and LLM disagree on ${dis.length} of ${recent.length} recent flagged items (${dis.filter(i => i.topics_llm.ai).length} LLM-only, ${dis.filter(i => i.topics.ai).length} regex-only). Switch the classifier above to compare.</p>`);
+  }
   drawTop(top);
-  for (const id of ["source", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin"]) $(id).addEventListener("input", render);
+  for (const id of ["source", "clf", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin"]) $(id).addEventListener("input", render);
+  $("clf").addEventListener("input", () => RECENT && drawRecent(RECENT));
   for (const id of ["ai0", "ai1"]) $(id).addEventListener("input", () => { $("aiwin").value = "custom"; render(); });
 })();
 </script>
