@@ -93,7 +93,7 @@
       <label>Covid window <input type="date" id="cv0" value="2019-12-01"> → <input type="date" id="cv1" value="2020-06-30"></label>
     </div>
     <div class="legend" id="legend2"></div>
-    <div class="chart"><svg id="align" viewBox="0 0 960 380"></svg><div class="tip" id="tip2"></div></div>
+    <div class="chart"><svg id="align" viewBox="0 0 960 400"></svg><div class="tip" id="tip2"></div></div>
     <p class="note" id="alignNote"></p>
   </div>
 
@@ -134,15 +134,15 @@
 const $ = id => document.getElementById(id);
 const COLORS = { ai: "var(--ai)", covid: "var(--covid)", climate: "var(--climate)" };
 const LABELS = { ai: "AI", covid: "Covid", climate: "Climate" };
-const COVID_MS = [
-  ["2020-01-21", "First confirmed US case"],
-  ["2020-01-31", "HHS declares public health emergency"],
-  ["2020-02-26", "First suspected US community spread"],
-  ["2020-03-06", "Congress passes $8.3B emergency funding"],
-  ["2020-03-11", "WHO declares pandemic; Europe travel ban"],
-  ["2020-03-13", "National emergency declared"],
-  ["2020-03-19", "California statewide stay-at-home order"],
-  ["2020-03-27", "CARES Act ($2.2T) signed"],
+const COVID_MS = [ // [date, full label (table), short label (chart)]
+  ["2020-01-21", "First confirmed US case", "First US case"],
+  ["2020-01-31", "HHS declares public health emergency", "Public health emergency"],
+  ["2020-02-26", "First suspected US community spread", "Community spread"],
+  ["2020-03-06", "Congress passes $8.3B emergency funding", "$8.3B emergency bill"],
+  ["2020-03-11", "WHO declares pandemic; Europe travel ban", "WHO: pandemic"],
+  ["2020-03-13", "National emergency declared", "National emergency"],
+  ["2020-03-19", "California statewide stay-at-home order", "CA stay-at-home"],
+  ["2020-03-27", "CARES Act ($2.2T) signed", "CARES Act"],
 ];
 const AI_MS = [
   ["2022-11-30", "ChatGPT released"], ["2023-03-14", "GPT-4 released"], ["2023-03-22", "FLI pause letter"],
@@ -278,7 +278,7 @@ function drawHistory(src, cmp, k, keys, log) {
 }
 
 function drawAlign(cmp, k) {
-  const svg = $("align"), W = 960, H = 380, L = 54, R = 20, T = 70, B = 36;
+  const svg = $("align"), W = 960, H = 400, L = 54, R = 20, T = 96, B = 36;
   const win = cmp.win, n = win.length; if (!n) { svg.innerHTML = ""; return; }
   const matchIdx = cmp.match ? win.findIndex(x => x[0] === cmp.match) : (cmp.aiNow > cmp.peak[1] ? n - 1 : 0);
   const aiAll = cmp.aiNorm.filter(x => x[1] != null);
@@ -291,10 +291,16 @@ function drawAlign(cmp, k) {
   g += `<g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fmtV(v, cmp.norm)}</text>`).join("")}`;
   win.forEach(([d], i) => { if (d.endsWith("-01")) g += `<line x1="${sx(i)}" x2="${sx(i)}" y1="${H - B}" y2="${H - B + 5}"/><text x="${sx(i)}" y="${H - 14}" text-anchor="middle">${new Date(toT(d)).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })}</text>`; });
   g += `</g>`;
-  // milestones: vertical hairlines with staggered labels at the top
+  // milestones: vertical hairlines; labels packed greedily into rows so none collide
   g += `<g class="ms">`;
-  const msIn = COVID_MS.map(([d, l]) => [win.findIndex(x => x[0] === d), d, l]).filter(x => x[0] >= 0);
-  msIn.forEach(([i, d, l], j) => { const x = sx(i), y = 14 + (j % 4) * 13; g += `<line x1="${x}" x2="${x}" y1="${y + 3}" y2="${H - B}" stroke-dasharray="none" opacity=".45"/><text x="${x + 3}" y="${y}">${l.length > 34 ? l.slice(0, 32) + "…" : l}</text>`; });
+  const msIn = COVID_MS.map(([d, , s]) => [win.findIndex(x => x[0] === d), d, s]).filter(x => x[0] >= 0);
+  const rowRight = []; // right edge of the last label placed in each row
+  msIn.forEach(([i, d, l]) => {
+    const x = sx(i), w = l.length * 5.6 + 6;
+    let row = rowRight.findIndex(r => r < x + 2); if (row < 0) row = rowRight.length;
+    rowRight[row] = x + w; const y = 14 + row * 13;
+    g += `<line x1="${x}" x2="${x}" y1="${y + 3}" y2="${H - B}" opacity=".45"/><text x="${x + 3}" y="${y}">${l}</text>`;
+  });
   g += `</g>`;
   g += `<path class="series" d="${pathOf(cvPts, sx, sy)}" stroke="${COLORS.covid}"/>`;
   g += `<path class="series" d="${pathOf(aiPts, sx, sy)}" stroke="${COLORS.ai}"/>`;
