@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is it February 2020 yet?</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb; --card: #ffffff; --line: #e6e4df; --grid: #ececea;
+    --text: #0b0b0b; --text-2: #52514e; --text-3: #8a8985;
+    --ai: #eb6834; --covid: #2a78d6; --climate: #1baf7a; --accent: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface: #161615; --card: #1e1e1c; --line: #2f2f2c; --grid: #292927;
+      --text: #f4f4f1; --text-2: #c3c2b7; --text-3: #8f8e88;
+      --ai: #d95926; --covid: #3987e5; --climate: #199e70; --accent: #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--text); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 32px 20px 72px; }
+  h1 { font-size: 28px; letter-spacing: -0.01em; margin: 0 0 6px; }
+  h2 { font-size: 17px; margin: 34px 0 10px; }
+  .sub { color: var(--text-2); margin: 0 0 18px; max-width: 76ch; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  .hero { font-size: 22px; line-height: 1.35; }
+  .hero .num { font-variant-numeric: tabular-nums; font-weight: 650; }
+  .hero .k-ai { border-bottom: 3px solid var(--ai); }
+  .hero .k-cv { border-bottom: 3px solid var(--covid); }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: 13px; color: var(--text-2); margin: 14px 0 0; }
+  .controls label { display: inline-flex; gap: 6px; align-items: center; }
+  select, input[type=date], input[type=number], button { font: inherit; font-size: 13px; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  button { cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--line); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); margin: 0 0 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; background: var(--c); }
+  .chart { position: relative; }
+  svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .grid line { stroke: var(--grid); stroke-width: 1; }
+  .axis text { fill: var(--text-3); font-size: 11px; }
+  .axis line { stroke: var(--line); }
+  .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .lbl { font-size: 11.5px; fill: var(--text-2); }
+  .ms line { stroke: var(--text-3); stroke-width: 1; }
+  .ms text { font-size: 10.5px; fill: var(--text-2); }
+  .tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; line-height: 1.4; color: var(--text); box-shadow: 0 4px 16px rgba(0,0,0,.08); display: none; min-width: 150px; }
+  .tip b { font-variant-numeric: tabular-nums; }
+  .tip .sw { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+  .note { font-size: 13px; color: var(--text-2); }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--text-2); font-weight: 500; }
+  td.n, th.n { text-align: right; }
+  .items li { margin: 0 0 8px; }
+  .items .d { color: var(--text-3); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .items .ctx { color: var(--text-3); }
+  details summary { cursor: pointer; color: var(--text-2); }
+  code { font-size: 13px; background: var(--grid); padding: 1px 5px; border-radius: 4px; }
+  .muted { color: var(--text-3); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Is it February 2020 yet?</h1>
+  <p class="sub">Of the top news stories, what fraction are about <b>AI</b>? Measured with the same instrument as <b>Covid</b> in early 2020, so the two curves can be laid on one axis and read against the political milestones of that spring.</p>
+
+  <div class="card">
+    <div id="hero" class="hero">Loading data…</div>
+    <div class="controls">
+      <label>Source <select id="source"></select></label>
+      <label>Window <select id="win"><option>7</option><option selected>14</option><option>28</option><option>56</option></select> days</label>
+      <label>Match on <select id="mode"><option value="level">coverage level</option><option value="mult">multiple of own baseline</option></select></label>
+      <label><input type="checkbox" id="showClimate"> show climate as a reference</label>
+      <label><input type="checkbox" id="log"> log scale</label>
+    </div>
+    <p class="note" id="srcNote" style="margin:12px 0 0"></p>
+  </div>
+
+  <h2>Full history</h2>
+  <div class="card">
+    <div class="legend" id="legend1"></div>
+    <div class="chart"><svg id="hist" viewBox="0 0 960 340"></svg><div class="tip" id="tip1"></div></div>
+    <p class="note">Rolling-window share. Ticks along the bottom mark AI milestones (hover to read them).</p>
+  </div>
+
+  <h2>AI's trajectory laid over Covid's spring</h2>
+  <div class="card">
+    <div class="controls" style="margin:0 0 10px">
+      <label>Covid window <input type="date" id="cv0" value="2019-12-01"> → <input type="date" id="cv1" value="2020-06-30"></label>
+    </div>
+    <div class="legend" id="legend2"></div>
+    <div class="chart"><svg id="align" viewBox="0 0 960 380"></svg><div class="tip" id="tip2"></div></div>
+    <p class="note" id="alignNote"></p>
+  </div>
+
+  <h2>What level of coverage went with which action?</h2>
+  <div class="card">
+    <table id="ms"><thead><tr><th>Date</th><th>US Covid milestone</th><th class="n">Covid share then</th><th class="n">AI now ÷ that</th></tr></thead><tbody></tbody></table>
+    <p class="note" style="margin-top:10px">Coverage does not cause policy, but it is a decent proxy for the salience that makes policy possible. The right-hand column is how many times louder AI coverage would have to get to reach each milestone's level.</p>
+  </div>
+
+  <h2>Google News “Top stories” snapshots</h2>
+  <div class="card">
+    <div class="chart"><svg id="top" viewBox="0 0 960 200" hidden></svg><div class="tip" id="tip3"></div></div>
+    <p class="note" id="topNote"></p>
+  </div>
+
+  <h2>Recent items the classifier tagged as AI</h2>
+  <div class="card">
+    <p class="note" id="recentNote"></p>
+    <ul class="items" id="recent"></ul>
+  </div>
+
+  <h2>Data table</h2>
+  <div class="card"><details><summary>Last 26 weeks, weekly (current source)</summary><div style="overflow-x:auto"><table id="tbl"><thead><tr><th>Week ending</th><th class="n">Items</th><th class="n">AI</th><th class="n">AI share</th><th class="n">Covid share</th></tr></thead><tbody></tbody></table></div></details></div>
+
+  <details style="margin-top:24px"><summary>Method and caveats</summary>
+    <ul class="note">
+      <li><b>Wikipedia Current Events</b> (default source): the leaf bullet items on each day's <code>Portal:Current events</code> page, an editorially curated list of the day's important news (~15–40 items/day). Share = AI items ÷ all items, pooled over the window. Global, event-shaped, volunteer-edited; it under-counts slow-burn debate relative to US front pages, so its Covid curve is steep and its AI level low. Compare shapes and multiples as well as levels.</li>
+      <li><b>GDELT TV</b>: percent of 15-second clips on CNN, Fox News and MSNBC mentioning the query (station average), from the Internet Archive TV News archive. Cable news only covers the top few stories, so this is a prominence measure. <b>GDELT DOC</b>: percent of all US English online articles matching the query, a volume measure. Both appear in the source menu only when the daily job has managed to fetch them; GDELT throttles aggressively.</li>
+      <li><b>Classifier</b>: one regular expression per topic, applied to the item text plus its parent bullets (the topic often sits in the parent, e.g. “COVID-19 pandemic › …”). Tuned for precision: <code>AI</code> counts only as a capitalized token; named labs, models, people and concepts are listed explicitly. Every tagged item is in <code>data/wiki_items.jsonl</code> for audit.</li>
+      <li><b>Matching</b>: the first day in the Covid window whose windowed share is ≥ AI's current share. “Multiple of own baseline” divides AI by its 2017 mean and Covid by its Jan–Nov 2019 mean first, since AI had a nonzero baseline and Covid had none.</li>
+      <li><b>Structural difference</b>: Covid was one event with an exponential ramp over ~8 weeks and direct harm to voters; AI is a slow burn with spikes. Level-matching says how loud AI is relative to a known moment, not that politics will follow the same clock.</li>
+    </ul>
+  </details>
+  <p class="note" style="margin-top:20px">Source code and data: <a href="https://github.com/Eccentr1city/ai-news-share">github.com/Eccentr1city/ai-news-share</a>.</p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const COLORS = { ai: "var(--ai)", covid: "var(--covid)", climate: "var(--climate)" };
+const LABELS = { ai: "AI", covid: "Covid", climate: "Climate" };
+const COVID_MS = [
+  ["2020-01-21", "First confirmed US case"],
+  ["2020-01-31", "HHS declares public health emergency"],
+  ["2020-02-26", "First suspected US community spread"],
+  ["2020-03-06", "Congress passes $8.3B emergency funding"],
+  ["2020-03-11", "WHO declares pandemic; Europe travel ban"],
+  ["2020-03-13", "National emergency declared"],
+  ["2020-03-19", "California statewide stay-at-home order"],
+  ["2020-03-27", "CARES Act ($2.2T) signed"],
+];
+const AI_MS = [
+  ["2022-11-30", "ChatGPT released"], ["2023-03-14", "GPT-4 released"], ["2023-03-22", "FLI pause letter"],
+  ["2023-05-16", "Altman testifies to Senate"], ["2023-10-30", "Biden AI executive order"], ["2024-08-13", "EU AI Act in force"],
+  ["2025-01-27", "DeepSeek market shock"], ["2025-09-29", "California SB 53 signed"],
+];
+
+// ---------- time helpers ----------
+const toT = s => Date.parse(s + "T00:00:00Z");
+const fmtD = t => new Date(t).toISOString().slice(0, 10);
+const addD = (s, n) => fmtD(toT(s) + n * 864e5);
+const longDate = s => new Date(toT(s)).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+const daysBetween = (a, b) => Math.round((toT(b) - toT(a)) / 864e5);
+
+// ---------- series construction ----------
+// A "source" exposes: series(topic, k) -> [[date, value|null]...] where value is a share in [0,1].
+function countSource(daily) {
+  const days = Object.keys(daily).sort();
+  return {
+    kind: "count", first: days[0], last: days[days.length - 1],
+    series(topic, k) {
+      const out = []; const buf = [];
+      for (let d = days[0]; d <= days[days.length - 1]; d = addD(d, 1)) {
+        const r = daily[d]; buf.push(r ? [r[topic] || 0, r.n] : [0, 0]); if (buf.length > k) buf.shift();
+        const n = buf.reduce((a, b) => a + b[1], 0);
+        out.push([d, n ? buf.reduce((a, b) => a + b[0], 0) / n : null, n]);
+      }
+      return out;
+    },
+    counts(topic, d) { const r = daily[d]; return r ? [r[topic] || 0, r.n] : [0, 0]; },
+  };
+}
+function pctSource(series) { // GDELT: {topic: {date: percent}}
+  const all = Object.values(series).flatMap(s => Object.keys(s)).sort();
+  return {
+    kind: "pct", first: all[0], last: all[all.length - 1],
+    series(topic, k) {
+      const s = series[topic] || {}; const out = []; const buf = [];
+      for (let d = all[0]; d <= all[all.length - 1]; d = addD(d, 1)) {
+        if (s[d] != null) buf.push(s[d] / 100); if (buf.length > k) buf.shift();
+        out.push([d, buf.length ? buf.reduce((a, b) => a + b, 0) / buf.length : null]);
+      }
+      return out;
+    },
+  };
+}
+const mean = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+const between = (arr, a, b) => arr.filter(([d, v]) => d >= a && d <= b && v != null);
+const lastNonNull = arr => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i][1] != null) return arr[i]; return null; };
+
+function compare(ai, cv, { cv0, cv1, mode }) {
+  const now = lastNonNull(ai); if (!now) return null;
+  const win = between(cv, cv0, cv1); if (!win.length) return null;
+  const aiBase = mean(between(ai, ai[0][0], addD(ai[0][0], 364)).map(x => x[1]));
+  const cvBase = mean(between(cv, addD(cv0, -334), addD(cv0, -1)).map(x => x[1]));
+  const norm = mode === "mult" && aiBase > 0 && cvBase > 0;
+  const f = norm ? (v, isAi) => v / (isAi ? aiBase : cvBase) : v => v;
+  const aiNow = f(now[1], true);
+  const winN = win.map(([d, v]) => [d, f(v, false)]);
+  const peak = winN.reduce((m, x) => x[1] > m[1] ? x : m, ["", -Infinity]);
+  const match = winN.find(x => x[1] >= aiNow)?.[0] ?? null;
+  return { now, aiNow, aiBase, cvBase, norm, win: winN, peak, match, aiNorm: ai.map(([d, v]) => [d, v == null ? null : f(v, true)]), cvNorm: cv.map(([d, v]) => [d, v == null ? null : f(v, false)]) };
+}
+
+// ---------- drawing ----------
+function lin(d0, d1, r0, r1) { return v => r0 + (v - d0) / ((d1 - d0) || 1) * (r1 - r0); }
+function yScale(vals, top, bottom, log) {
+  const v = vals.filter(x => x != null && (!log || x > 0));
+  if (!v.length) return { s: () => bottom, ticks: [] };
+  if (log) {
+    const lo = Math.log10(Math.min(...v)), hi = Math.log10(Math.max(...v)) + 0.05;
+    const ticks = []; for (let e = -4; e <= 0; e++) for (const m of [1, 2, 5]) { const t = m * 10 ** e; if (Math.log10(t) >= lo - 0.3 && Math.log10(t) <= hi) ticks.push(t); }
+    return { s: x => bottom - (Math.log10(x) - lo) / (hi - lo) * (bottom - top), ticks };
+  }
+  const hi = Math.max(...v) * 1.08 || 0.01;
+  const step = [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10].find(s => hi / s <= 6) || 10;
+  const ticks = []; for (let t = 0; t <= hi; t += step) ticks.push(+t.toFixed(6));
+  return { s: x => bottom - x / hi * (bottom - top), ticks };
+}
+const fmtV = (v, norm) => norm ? v.toFixed(1) + "×" : (v * 100 < 10 ? (v * 100).toFixed(1) : Math.round(v * 100)) + "%";
+function pathOf(pts, sx, sy) {
+  let s = "", pen = false;
+  for (const [x, y] of pts) { if (y == null || !isFinite(sy(y))) { pen = false; continue; } s += (pen ? "L" : "M") + sx(x).toFixed(1) + " " + sy(y).toFixed(1); pen = true; }
+  return s;
+}
+function legend(el, keys) { el.innerHTML = keys.map(k => `<span style="--c:${COLORS[k]}">${LABELS[k]}</span>`).join(""); }
+
+function hover(svg, tip, { L, R, T, B, W, H, xOf, dateAt, rows }) {
+  // rows(date) -> [{key,label,value,text}] ; crosshair + tooltip
+  let ch = svg.querySelector(".ch");
+  if (!ch) { ch = document.createElementNS("http://www.w3.org/2000/svg", "line"); ch.setAttribute("class", "ch"); ch.setAttribute("stroke", "var(--text-3)"); ch.setAttribute("y1", T); ch.setAttribute("y2", H - B); ch.style.display = "none"; svg.appendChild(ch); }
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * W;
+    if (x < L || x > W - R) { ch.style.display = "none"; tip.style.display = "none"; return; }
+    const d = dateAt(x); const px = xOf(d);
+    ch.setAttribute("x1", px); ch.setAttribute("x2", px); ch.style.display = "";
+    const items = rows(d); if (!items) { tip.style.display = "none"; return; }
+    tip.innerHTML = items.map(i => i.text ? `<div>${i.text}</div>` : `<div><span class="sw" style="background:${COLORS[i.key]}"></span>${i.label} <b>${i.value}</b></div>`).join("");
+    tip.style.display = "block";
+    const left = px / W * r.width; tip.style.left = (left + 14 + tip.offsetWidth > r.width ? left - tip.offsetWidth - 14 : left + 14) + "px";
+    tip.style.top = Math.max(0, (e.clientY - r.top) - 30) + "px";
+  };
+  svg.onmouseleave = () => { ch.style.display = "none"; tip.style.display = "none"; };
+}
+
+function drawHistory(src, cmp, k, keys, log) {
+  const svg = $("hist"), W = 960, H = 340, L = 54, R = 70, T = 14, B = 34;
+  const lines = keys.map(key => [key, key === "ai" ? cmp.aiNorm : key === "covid" ? cmp.cvNorm : src.series(key, k)]);
+  const t0 = toT(src.first), t1 = toT(src.last);
+  const sx = d => lin(t0, t1, L, W - R)(toT(d));
+  const vals = lines.flatMap(([, s]) => s.map(x => x[1]));
+  const { s: sy, ticks } = yScale(vals, T, H - B, log);
+  let g = `<g class="grid">${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/>`).join("")}</g>`;
+  g += `<g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fmtV(v, cmp.norm)}</text>`).join("")}`;
+  for (let y = +src.first.slice(0, 4) + 1; y <= +src.last.slice(0, 4); y++) { const x = sx(`${y}-01-01`); g += `<line x1="${x}" x2="${x}" y1="${H - B}" y2="${H - B + 5}"/><text x="${x}" y="${H - 12}" text-anchor="middle">${y}</text>`; }
+  g += `</g>`;
+  g += `<g class="ms">${AI_MS.filter(([d]) => d >= src.first && d <= src.last).map(([d]) => `<line x1="${sx(d)}" x2="${sx(d)}" y1="${H - B - 8}" y2="${H - B}"/>`).join("")}</g>`;
+  for (const [key, s] of lines) g += `<path class="series" d="${pathOf(s, sx, sy)}" stroke="${COLORS[key]}"/>`;
+  // direct labels at line ends
+  const ends = lines.map(([key, s]) => { const e = lastNonNull(s); return e ? [key, sy(e[1])] : null; }).filter(Boolean).sort((a, b) => a[1] - b[1]);
+  for (let i = 1; i < ends.length; i++) if (ends[i][1] - ends[i - 1][1] < 14) ends[i][1] = ends[i - 1][1] + 14;
+  for (const [key, y] of ends) g += `<text class="lbl" x="${W - R + 8}" y="${y + 4}">${LABELS[key]}</text>`;
+  svg.innerHTML = g;
+  const byDate = Object.fromEntries(lines.map(([key, s]) => [key, new Map(s)]));
+  hover(svg, $("tip1"), { L, R, T, B, W, H, xOf: sx, dateAt: x => fmtD(lin(L, W - R, t0, t1)(x)), rows: d => {
+    const ms = AI_MS.find(([m]) => Math.abs(daysBetween(m, d)) <= 3);
+    const out = [{ text: `<b>${longDate(d)}</b>` }];
+    for (const key of keys) { const v = byDate[key].get(d); if (v != null) out.push({ key, label: LABELS[key], value: fmtV(v, cmp.norm) }); }
+    if (src.kind === "count") { const [a, n] = src.counts("ai", d); out.push({ text: `<span class="muted">${a} of ${n} items that day were AI</span>` }); }
+    if (ms) out.push({ text: `<span class="muted">${ms[0]}: ${ms[1]}</span>` });
+    return out;
+  } });
+}
+
+function drawAlign(cmp, k) {
+  const svg = $("align"), W = 960, H = 380, L = 54, R = 20, T = 70, B = 36;
+  const win = cmp.win, n = win.length; if (!n) { svg.innerHTML = ""; return; }
+  const matchIdx = cmp.match ? win.findIndex(x => x[0] === cmp.match) : (cmp.aiNow > cmp.peak[1] ? n - 1 : 0);
+  const aiAll = cmp.aiNorm.filter(x => x[1] != null);
+  const tail = aiAll.slice(-(matchIdx + 1));
+  const aiPts = tail.map((x, i) => [matchIdx - (tail.length - 1) + i, x[1], x[0]]);
+  const cvPts = win.map((x, i) => [i, x[1], x[0]]);
+  const sx = lin(0, n - 1, L, W - R);
+  const { s: sy, ticks } = yScale([...aiPts, ...cvPts].map(x => x[1]), T, H - B, false);
+  let g = `<g class="grid">${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/>`).join("")}</g>`;
+  g += `<g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fmtV(v, cmp.norm)}</text>`).join("")}`;
+  win.forEach(([d], i) => { if (d.endsWith("-01")) g += `<line x1="${sx(i)}" x2="${sx(i)}" y1="${H - B}" y2="${H - B + 5}"/><text x="${sx(i)}" y="${H - 14}" text-anchor="middle">${new Date(toT(d)).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })}</text>`; });
+  g += `</g>`;
+  // milestones: vertical hairlines with staggered labels at the top
+  g += `<g class="ms">`;
+  const msIn = COVID_MS.map(([d, l]) => [win.findIndex(x => x[0] === d), d, l]).filter(x => x[0] >= 0);
+  msIn.forEach(([i, d, l], j) => { const x = sx(i), y = 14 + (j % 4) * 13; g += `<line x1="${x}" x2="${x}" y1="${y + 3}" y2="${H - B}" stroke-dasharray="none" opacity=".45"/><text x="${x + 3}" y="${y}">${l.length > 34 ? l.slice(0, 32) + "…" : l}</text>`; });
+  g += `</g>`;
+  g += `<path class="series" d="${pathOf(cvPts, sx, sy)}" stroke="${COLORS.covid}"/>`;
+  g += `<path class="series" d="${pathOf(aiPts, sx, sy)}" stroke="${COLORS.ai}"/>`;
+  const px = sx(matchIdx), py = sy(cmp.aiNow);
+  g += `<circle cx="${px}" cy="${py}" r="6" fill="${COLORS.ai}" stroke="var(--card)" stroke-width="2"/>`;
+  g += `<text class="lbl" x="${px + 10}" y="${py - 10}">AI today${cmp.match ? " ≙ " + cmp.match : ""}</text>`;
+  svg.innerHTML = g;
+  const cvBy = new Map(cvPts.map(p => [p[0], p])), aiBy = new Map(aiPts.map(p => [p[0], p]));
+  hover(svg, $("tip2"), { L, R, T, B, W, H, xOf: i => sx(i), dateAt: x => Math.round(lin(L, W - R, 0, n - 1)(x)), rows: i => {
+    const c = cvBy.get(i), a = aiBy.get(i); const out = [];
+    if (c) out.push({ text: `<b>${longDate(c[2])}</b>` }, { key: "covid", label: "Covid", value: fmtV(c[1], cmp.norm) });
+    if (a) out.push({ key: "ai", label: `AI on ${a[2]}`, value: fmtV(a[1], cmp.norm) });
+    const ms = COVID_MS.find(([d]) => c && d === c[2]); if (ms) out.push({ text: `<span class="muted">${ms[1]}</span>` });
+    return out.length ? out : null;
+  } });
+  const b = cmp.norm ? ` Baselines: AI ${fmtV(cmp.aiBase)} (2017 mean), Covid ${fmtV(cmp.cvBase)} (Jan–Nov 2019 mean).` : "";
+  $("alignNote").textContent = `The AI line is the most recent ${tail.length} days of AI coverage, ending today, slid along the axis so that today sits on ${cmp.match ? "the first Covid date with the same " + (cmp.norm ? "multiple of baseline" : "share") : (cmp.aiNow > cmp.peak[1] ? "the end of the window (AI is above Covid's peak)" : "the start of the window (AI is below Covid's lowest point)")}. Covid peaked at ${fmtV(cmp.peak[1], cmp.norm)} on ${cmp.peak[0]} (${k}-day window).${b}`;
+}
+
+function drawMilestones(cmp) {
+  const cvBy = new Map(cmp.win);
+  $("ms").querySelector("tbody").innerHTML = COVID_MS.map(([d, l]) => {
+    const v = cvBy.get(d); const ratio = v != null && cmp.aiNow > 0 ? v / cmp.aiNow : null;
+    return `<tr><td>${d}</td><td>${l}</td><td class="n">${v == null ? "—" : fmtV(v, cmp.norm)}</td><td class="n">${ratio == null ? "—" : ratio < 1 ? "already past" : "1 ÷ " + ratio.toFixed(1)}</td></tr>`;
+  }).join("");
+}
+
+function drawTable(ai, cv, src) {
+  const rows = []; const aiBy = new Map(ai.map(x => [x[0], x])), cvBy = new Map(cv);
+  for (let i = 0; i < 26; i++) {
+    const d = addD(src.last, -7 * i); const a = aiBy.get(d); if (!a) continue;
+    let items = "", n = "";
+    if (src.kind === "count") { let s = 0, t = 0; for (let j = 0; j < 7; j++) { const [x, y] = src.counts("ai", addD(d, -j)); s += x; t += y; } items = t; n = s; }
+    rows.push(`<tr><td>${d}</td><td class="n">${items}</td><td class="n">${n}</td><td class="n">${a[1] == null ? "—" : fmtV(a[1])}</td><td class="n">${cvBy.get(d) == null ? "—" : fmtV(cvBy.get(d))}</td></tr>`);
+  }
+  $("tbl").querySelector("tbody").innerHTML = rows.join("");
+}
+
+function drawTop(rows) {
+  const svg = $("top"); const pts = rows.filter(r => r.feed === "google_top").map(r => [r.ts.slice(0, 10), r.ai / r.n, r]);
+  if (pts.length < 2) { $("topNote").textContent = `The daily job also records Google News "Top stories" (${pts.length} snapshot${pts.length === 1 ? "" : "s"} so far${pts.length ? `; latest: ${pts[0].r.ai} of ${pts[0].r.n} headlines about AI` : ""}). This is the literal "top stories" framing but has no history, so it only becomes a chart after a couple of weeks.`; return; }
+  svg.hidden = false; const W = 960, H = 200, L = 54, R = 20, T = 12, B = 30;
+  const t0 = toT(pts[0][0]), t1 = toT(pts[pts.length - 1][0]); const sx = d => lin(t0, t1, L, W - R)(toT(d));
+  const { s: sy, ticks } = yScale(pts.map(p => p[1]), T, H - B, false);
+  let g = `<g class="grid">${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/>`).join("")}</g><g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fmtV(v)}</text>`).join("")}</g>`;
+  g += `<path class="series" d="${pathOf(pts, sx, sy)}" stroke="${COLORS.ai}"/>` + pts.map(p => `<circle cx="${sx(p[0])}" cy="${sy(p[1])}" r="4" fill="${COLORS.ai}" stroke="var(--card)" stroke-width="2"/>`).join("");
+  svg.innerHTML = g;
+  $("topNote").textContent = `Share of Google News "Top stories" headlines about AI, one snapshot per day (${pts.length} so far; latest ${pts[pts.length - 1][0]}: ${pts[pts.length - 1][2].ai} of ${pts[pts.length - 1][2].n}).`;
+  hover(svg, $("tip3"), { L, R, T, B, W, H, xOf: sx, dateAt: x => fmtD(lin(L, W - R, t0, t1)(x)), rows: d => { const p = pts.reduce((m, q) => Math.abs(toT(q[0]) - toT(d)) < Math.abs(toT(m[0]) - toT(d)) ? q : m); return [{ text: `<b>${longDate(p[0])}</b>` }, { key: "ai", label: "AI", value: `${p[2].ai} / ${p[2].n} = ${fmtV(p[1])}` }]; } });
+}
+
+function drawRecent(items) {
+  const ai = items.filter(i => i.topics.ai).reverse();
+  $("recentNote").textContent = ai.length ? `${ai.length} AI-tagged items in the last ~120 days of Wikipedia Current Events. If something here is not really about AI, the regex in topics.py needs tightening.` : "No recent AI items found.";
+  $("recent").innerHTML = ai.slice(0, 60).map(i => `<li><span class="d">${i.date}</span>${i.context ? `<span class="ctx">${i.context} › </span>` : ""}${i.text}${i.sources?.length ? ` <span class="muted">(${i.sources.slice(0, 2).join(", ")})</span>` : ""}</li>`).join("");
+}
+
+// ---------- app ----------
+const SOURCES = {};
+async function loadJson(p) { try { const r = await fetch(p); return r.ok ? await r.json() : null; } catch { return null; } }
+async function loadJsonl(p) { try { const r = await fetch(p); return r.ok ? (await r.text()).trim().split("\n").filter(Boolean).map(JSON.parse) : []; } catch { return []; } }
+
+function render() {
+  const src = SOURCES[$("source").value]; if (!src) return;
+  const k = +$("win").value, mode = $("mode").value, cv0 = $("cv0").value, cv1 = $("cv1").value;
+  const ai = src.series("ai", k), cv = src.series("covid", k);
+  const cmp = compare(ai, cv, { cv0, cv1, mode });
+  if (!cmp) { $("hero").textContent = "Not enough data for a comparison."; return; }
+  const keys = ["ai", "covid", ...($("showClimate").checked ? ["climate"] : [])];
+  const nowTxt = cmp.norm ? `<span class="num">${cmp.aiNow.toFixed(1)}×</span> its 2017 baseline (${fmtV(cmp.now[1])} of ${src.kind === "count" ? "items" : "coverage"})` : `<span class="num">${fmtV(cmp.now[1])}</span> of ${src.kind === "count" ? "curated news items" : src.unit}`;
+  let verdict;
+  if (cmp.match) {
+    const ne = daysBetween(cmp.match, "2020-03-13");
+    verdict = `Covid coverage first reached that level on <span class="k-cv num">${longDate(cmp.match)}</span>, ${ne > 0 ? `${ne} days before the national emergency` : ne === 0 ? "the day of the national emergency" : `${-ne} days after the national emergency`}.`;
+  } else if (cmp.aiNow > cmp.peak[1]) verdict = `That is <b>above Covid's peak</b> in this window (${fmtV(cmp.peak[1], cmp.norm)} on ${cmp.peak[0]}).`;
+  else verdict = `Covid never fell that low in this window: AI is <b>below where Covid started</b> on ${cmp.win[0][0]} (${fmtV(cmp.win[0][1], cmp.norm)}).`;
+  $("hero").innerHTML = `As of ${longDate(cmp.now[0])}, AI is <span class="k-ai">${nowTxt}</span> (${k}-day window). ${verdict}`;
+  $("srcNote").textContent = src.note;
+  legend($("legend1"), keys); legend($("legend2"), ["ai", "covid"]);
+  drawHistory(src, cmp, k, keys, $("log").checked);
+  drawAlign(cmp, k);
+  drawMilestones(cmp);
+  drawTable(ai, cv, src);
+}
+
+(async () => {
+  const [wiki, tv, doc, recent, top] = await Promise.all([loadJson("data/wiki_daily.json"), loadJson("data/gdelt_tv.json"), loadJson("data/gdelt_doc.json"), loadJson("data/wiki_recent.json"), loadJsonl("data/topstories.jsonl")]);
+  if (wiki) { const s = countSource(wiki.daily); s.note = `Wikipedia Current Events: ${Object.keys(wiki.daily).length} days, ${Object.values(wiki.daily).reduce((a, r) => a + r.n, 0).toLocaleString()} curated news items since ${s.first}. Share = AI items ÷ all items in the window.`; SOURCES.wiki = s; }
+  if (tv && Object.keys(tv.series.ai || {}).length) { const s = pctSource(tv.series); s.unit = "cable-news airtime"; s.note = `GDELT TV: percent of 15-second clips on CNN, Fox News and MSNBC mentioning the topic (station average), through ${s.last}.`; SOURCES.tv = s; }
+  if (doc && Object.keys(doc.series.ai || {}).length) { const s = pctSource(doc.series); s.unit = "US online news articles"; s.note = `GDELT DOC: percent of all monitored US English online articles matching the topic query, through ${s.last}.`; SOURCES.doc = s; }
+  const names = { wiki: "Wikipedia Current Events (curated items)", tv: "GDELT TV (cable news airtime)", doc: "GDELT DOC (all US online articles)" };
+  $("source").innerHTML = Object.keys(SOURCES).map(k => `<option value="${k}">${names[k]}</option>`).join("");
+  if (!Object.keys(SOURCES).length) { $("hero").innerHTML = `No data found. Run <code>uv run ai-news-share backfill</code> and serve the <code>docs/</code> folder.`; return; }
+  render();
+  if (recent) drawRecent(recent);
+  drawTop(top);
+  for (const id of ["source", "win", "mode", "showClimate", "log", "cv0", "cv1"]) $(id).addEventListener("input", render);
+})();
+</script>
+</body>
+</html>
