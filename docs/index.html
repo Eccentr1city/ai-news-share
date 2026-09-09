@@ -75,7 +75,7 @@
       <label>Window <select id="win"><option>7</option><option selected>14</option><option>28</option><option>56</option></select> days</label>
       <label>Match on <select id="mode"><option value="level">coverage level</option><option value="mult">multiple of own baseline</option></select></label>
       <label><input type="checkbox" id="showClimate"> show climate as a reference</label>
-      <label><input type="checkbox" id="log"> log scale</label>
+      <label>Y scale <select id="yscale"><option value="lin">linear</option><option value="log">log</option><option value="logit">log odds (topic : rest)</option></select></label>
     </div>
     <p class="note" id="srcNote" style="margin:12px 0 0"></p>
   </div>
@@ -84,7 +84,18 @@
   <div class="card">
     <div class="legend" id="legend1"></div>
     <div class="chart"><svg id="hist" viewBox="0 0 960 340"></svg><div class="tip" id="tip1"></div></div>
-    <p class="note">Rolling-window share. Ticks along the bottom mark AI milestones (hover to read them).</p>
+    <p class="note">Rolling-window share (or log odds). Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the next section.</p>
+  </div>
+
+  <h2>How fast is it growing? Doubling time of the odds</h2>
+  <div class="card">
+    <p class="note" style="margin:0 0 10px">A share is capped at 100%, so its growth must saturate; the <b>odds</b> (topic items : all other items) are not. On the log-odds scale exponential growth is a straight line, and the slope of a least-squares fit is a doubling time. Fits below are drawn as dashed lines on the history chart when the log-odds scale is selected.</p>
+    <div class="controls" style="margin:0 0 10px">
+      <label>Covid takeoff <input type="date" id="ft0" value="2020-01-15"> → <input type="date" id="ft1" value="2020-03-15"></label>
+      <label>AI window <select id="aiwin"><option value="365">last year</option><option value="730" selected>last 2 years</option><option value="chatgpt">since ChatGPT (2022-11-30)</option><option value="all">all data</option></select></label>
+    </div>
+    <table id="fits"><thead><tr><th>Series</th><th>Fit window</th><th class="n">Days</th><th class="n">Odds change</th><th class="n">r²</th></tr></thead><tbody></tbody></table>
+    <p class="note" id="fitNote" style="margin-top:10px"></p>
   </div>
 
   <h2>AI's trajectory laid over Covid's spring</h2>
@@ -172,9 +183,20 @@ function countSource(daily) {
       }
       return out;
     },
+    // ln((x+0.5)/(n-x+0.5)) over the window (Jeffreys pseudo-count keeps zeros finite)
+    logOdds(topic, k) {
+      const out = []; const buf = [];
+      for (let d = days[0]; d <= days[days.length - 1]; d = addD(d, 1)) {
+        const r = daily[d]; buf.push(r ? [r[topic] || 0, r.n] : [0, 0]); if (buf.length > k) buf.shift();
+        const x = buf.reduce((a, b) => a + b[0], 0), n = buf.reduce((a, b) => a + b[1], 0);
+        out.push([d, n ? Math.log((x + 0.5) / (n - x + 0.5)) : null]);
+      }
+      return out;
+    },
     counts(topic, d) { const r = daily[d]; return r ? [r[topic] || 0, r.n] : [0, 0]; },
   };
 }
+const logit = (p, floor = 1e-5) => { p = Math.min(Math.max(p, floor), 1 - floor); return Math.log(p / (1 - p)); };
 function pctSource(series) { // GDELT: {topic: {date: percent}}
   const all = Object.values(series).flatMap(s => Object.keys(s)).sort();
   return {
@@ -187,7 +209,18 @@ function pctSource(series) { // GDELT: {topic: {date: percent}}
       }
       return out;
     },
+    logOdds(topic, k) { return this.series(topic, k).map(([d, v]) => [d, v == null ? null : logit(v)]); },
   };
+}
+// Least-squares line through ln(odds) vs. day over [a, b]; slope -> doubling time.
+function fitDoubling(lo, a, b) {
+  const pts = lo.filter(([d, v]) => d >= a && d <= b && v != null && isFinite(v)).map(([d, v]) => [toT(d) / 864e5, v]);
+  if (pts.length < 5) return null;
+  const mx = mean(pts.map(p => p[0])), my = mean(pts.map(p => p[1]));
+  const sxx = pts.reduce((s, [x]) => s + (x - mx) ** 2, 0); if (!sxx) return null;
+  const slope = pts.reduce((s, [x, y]) => s + (x - mx) * (y - my), 0) / sxx;
+  const ssRes = pts.reduce((s, [x, y]) => s + (y - (my + slope * (x - mx))) ** 2, 0), ssTot = pts.reduce((s, [, y]) => s + (y - my) ** 2, 0) || 1e-12;
+  return { a, b, n: pts.length, slope, doubling: slope > 0 ? Math.LN2 / slope : null, halving: slope < 0 ? Math.LN2 / -slope : null, r2: 1 - ssRes / ssTot, at: d => my + slope * (toT(d) / 864e5 - mx) };
 }
 const mean = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 const between = (arr, a, b) => arr.filter(([d, v]) => d >= a && d <= b && v != null);
@@ -212,9 +245,14 @@ function compare(ai, cv, { cv0, cv1, mode }) {
 
 // ---------- drawing ----------
 function lin(d0, d1, r0, r1) { return v => r0 + (v - d0) / ((d1 - d0) || 1) * (r1 - r0); }
-function yScale(vals, top, bottom, log) {
+function yScale(vals, top, bottom, log, logit) {
   const v = vals.filter(x => x != null && (!log || x > 0));
   if (!v.length) return { s: () => bottom, ticks: [] };
+  if (logit) { // values are ln(odds); ticks at round odds like 1:1000, 1:100, ...
+    const lo = Math.min(...v) - 0.2, hi = Math.max(...v) + 0.2;
+    const ticks = []; for (let e = -6; e <= 2; e++) for (const m of [1, 3]) { const t = Math.log(m * 10 ** e); if (t >= lo && t <= hi) ticks.push(t); }
+    return { s: x => bottom - (x - lo) / (hi - lo) * (bottom - top), ticks };
+  }
   if (log) {
     const lo = Math.log10(Math.min(...v)), hi = Math.log10(Math.max(...v)) + 0.05;
     const ticks = []; for (let e = -4; e <= 0; e++) for (const m of [1, 2, 5]) { const t = m * 10 ** e; if (Math.log10(t) >= lo - 0.3 && Math.log10(t) <= hi) ticks.push(t); }
@@ -225,6 +263,7 @@ function yScale(vals, top, bottom, log) {
   const ticks = []; for (let t = 0; t <= hi; t += step) ticks.push(+t.toFixed(6));
   return { s: x => bottom - x / hi * (bottom - top), ticks };
 }
+const fmtOdds = lnOdds => { const o = Math.exp(lnOdds); return o >= 1 ? `${o >= 10 ? Math.round(o) : o.toFixed(1)}:1` : `1:${1 / o >= 10 ? Math.round(1 / o).toLocaleString() : (1 / o).toFixed(1)}`; };
 const fmtV = (v, norm) => { if (norm) return v.toFixed(1) + "×"; const p = v * 100; return (p >= 10 ? Math.round(p) : p >= 1 ? p.toFixed(1) : p >= 0.1 ? p.toFixed(2) : p === 0 ? "0" : p.toFixed(3)) + "%"; };
 function pathOf(pts, sx, sy) {
   let s = "", pen = false;
@@ -251,19 +290,25 @@ function hover(svg, tip, { L, R, T, B, W, H, xOf, dateAt, rows }) {
   svg.onmouseleave = () => { ch.style.display = "none"; tip.style.display = "none"; };
 }
 
-function drawHistory(src, cmp, k, keys, log) {
-  const svg = $("hist"), W = 960, H = 340, L = 54, R = 70, T = 14, B = 34;
-  const lines = keys.map(key => [key, key === "ai" ? cmp.aiNorm : key === "covid" ? cmp.cvNorm : src.series(key, k)]);
+function drawHistory(src, cmp, k, keys, yscale, fits) {
+  const svg = $("hist"), W = 960, H = 340, L = 60, R = 70, T = 14, B = 34;
+  const isLogit = yscale === "logit", log = yscale === "log";
+  const lines = keys.map(key => [key, isLogit ? src.logOdds(key, k) : key === "ai" ? cmp.aiNorm : key === "covid" ? cmp.cvNorm : src.series(key, k)]);
   const t0 = toT(src.first), t1 = toT(src.last);
   const sx = d => lin(t0, t1, L, W - R)(toT(d));
   const vals = lines.flatMap(([, s]) => s.map(x => x[1]));
-  const { s: sy, ticks } = yScale(vals, T, H - B, log);
+  const { s: sy, ticks } = yScale(vals, T, H - B, log, isLogit);
+  const fy = isLogit ? fmtOdds : v => fmtV(v, cmp.norm);
   let g = `<g class="grid">${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/>`).join("")}</g>`;
-  g += `<g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fmtV(v, cmp.norm)}</text>`).join("")}`;
+  g += `<g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fy(v)}</text>`).join("")}`;
   for (let y = +src.first.slice(0, 4) + 1; y <= +src.last.slice(0, 4); y++) { const x = sx(`${y}-01-01`); g += `<line x1="${x}" x2="${x}" y1="${H - B}" y2="${H - B + 5}"/><text x="${x}" y="${H - 12}" text-anchor="middle">${y}</text>`; }
   g += `</g>`;
   g += `<g class="ms">${AI_MS.filter(([d]) => d >= src.first && d <= src.last).map(([d]) => `<line x1="${sx(d)}" x2="${sx(d)}" y1="${H - B - 8}" y2="${H - B}"/>`).join("")}</g>`;
   for (const [key, s] of lines) g += `<path class="series" d="${pathOf(s, sx, sy)}" stroke="${COLORS[key]}"/>`;
+  if (isLogit) for (const [key, f] of fits) if (f && keys.includes(key)) {
+    const pts = [[f.a, f.at(f.a)], [f.b, f.at(f.b)]].map(([d, v]) => `${sx(d).toFixed(1)} ${sy(v).toFixed(1)}`);
+    g += `<path d="M${pts[0]}L${pts[1]}" fill="none" stroke="${COLORS[key]}" stroke-width="2" stroke-dasharray="6 5" opacity=".85"/>`;
+  }
   // direct labels at line ends
   const ends = lines.map(([key, s]) => { const e = lastNonNull(s); return e ? [key, sy(e[1])] : null; }).filter(Boolean).sort((a, b) => a[1] - b[1]);
   for (let i = 1; i < ends.length; i++) if (ends[i][1] - ends[i - 1][1] < 14) ends[i][1] = ends[i - 1][1] + 14;
@@ -273,7 +318,7 @@ function drawHistory(src, cmp, k, keys, log) {
   hover(svg, $("tip1"), { L, R, T, B, W, H, xOf: sx, dateAt: x => fmtD(lin(L, W - R, t0, t1)(x)), rows: d => {
     const ms = AI_MS.find(([m]) => Math.abs(daysBetween(m, d)) <= 3);
     const out = [{ text: `<b>${longDate(d)}</b>` }];
-    for (const key of keys) { const v = byDate[key].get(d); if (v != null) out.push({ key, label: LABELS[key], value: fmtV(v, cmp.norm) }); }
+    for (const key of keys) { const v = byDate[key].get(d); if (v != null) out.push({ key, label: LABELS[key], value: isLogit ? `odds ${fmtOdds(v)}` : fmtV(v, cmp.norm) }); }
     if (src.kind === "count") { const [a, n] = src.counts("ai", d); out.push({ text: `<span class="muted">${a} of ${n} items that day were AI</span>` }); }
     if (ms) out.push({ text: `<span class="muted">${ms[0]}: ${ms[1]}</span>` });
     return out;
@@ -323,6 +368,17 @@ function drawAlign(cmp, k) {
   $("alignNote").textContent = `The AI line is the most recent ${tail.length} days of AI coverage, ending today, slid along the axis so that today sits on ${cmp.match ? "the first Covid date with the same " + (cmp.norm ? "multiple of baseline" : "share") : (cmp.aiNow > cmp.peak[1] ? "the end of the window (AI is above Covid's peak)" : "the start of the window (AI is at or below Covid's level there)")}. Covid peaked at ${fmtV(cmp.peak[1], cmp.norm)} on ${cmp.peak[0]} (${k}-day window).${b}`;
 }
 
+function computeFits(src, k) {
+  const aiw = $("aiwin").value, last = src.last;
+  const aiA = aiw === "all" ? src.first : aiw === "chatgpt" ? "2022-11-30" : addD(last, -aiw);
+  const fits = [["covid", fitDoubling(src.logOdds("covid", k), $("ft0").value, $("ft1").value)], ["ai", fitDoubling(src.logOdds("ai", k), aiA, last)]];
+  const rate = f => f.doubling ? `doubles every ${f.doubling < 60 ? f.doubling.toFixed(0) + " days" : (f.doubling / 365).toFixed(1) + " years"}` : f.halving ? `halves every ${f.halving < 60 ? f.halving.toFixed(0) + " days" : (f.halving / 365).toFixed(1) + " years"}` : "flat";
+  $("fits").querySelector("tbody").innerHTML = fits.map(([key, f]) => f ? `<tr><td><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:${COLORS[key]}"></span>${LABELS[key]}</td><td>${f.a} → ${f.b}</td><td class="n">${f.n}</td><td class="n">${rate(f)}</td><td class="n">${f.r2.toFixed(2)}</td></tr>` : `<tr><td>${LABELS[key]}</td><td colspan="4" class="muted">not enough data in window</td></tr>`).join("");
+  const c = fits[0][1], a = fits[1][1];
+  $("fitNote").textContent = c && a ? `Read: during its takeoff Covid's odds of being a top story ${rate(c)} (r² ${c.r2.toFixed(2)}). Over the chosen AI window the odds ${rate(a)} (r² ${a.r2.toFixed(2)}); an r² near zero means there is no sustained trend, only spikes. Fits use a ${k}-day window; shorter windows are noisier, longer ones lag.` : "";
+  return fits;
+}
+
 function drawMilestones(cmp) {
   const cvBy = new Map(cmp.win);
   $("ms").querySelector("tbody").innerHTML = COVID_MS.map(([d, l]) => {
@@ -344,7 +400,7 @@ function drawTable(ai, cv, src) {
 
 function drawTop(rows) {
   const svg = $("top"); const pts = rows.filter(r => r.feed === "google_top").map(r => [r.ts.slice(0, 10), r.ai / r.n, r]);
-  if (pts.length < 2) { $("topNote").textContent = `The daily job also records Google News "Top stories" (${pts.length} snapshot${pts.length === 1 ? "" : "s"} so far${pts.length ? `; latest: ${pts[0].r.ai} of ${pts[0].r.n} headlines about AI` : ""}). This is the literal "top stories" framing but has no history, so it only becomes a chart after a couple of weeks.`; return; }
+  if (pts.length < 2) { $("topNote").textContent = `The daily job also records Google News "Top stories" (${pts.length} snapshot${pts.length === 1 ? "" : "s"} so far${pts.length ? `; latest: ${pts[pts.length - 1][2].ai} of ${pts[pts.length - 1][2].n} headlines about AI` : ""}). This is the literal "top stories" framing but has no history, so it only becomes a chart after a couple of weeks.`; return; }
   svg.hidden = false; const W = 960, H = 200, L = 54, R = 20, T = 12, B = 30;
   const t0 = toT(pts[0][0]), t1 = toT(pts[pts.length - 1][0]); const sx = d => lin(t0, t1, L, W - R)(toT(d));
   const { s: sy, ticks } = yScale(pts.map(p => p[1]), T, H - B, false);
@@ -383,7 +439,8 @@ function render() {
   $("hero").innerHTML = `As of ${longDate(cmp.now[0])}, AI is <span class="k-ai">${nowTxt}</span> (${k}-day window). ${verdict}`;
   $("srcNote").textContent = src.note;
   legend($("legend1"), keys); legend($("legend2"), ["ai", "covid"]);
-  drawHistory(src, cmp, k, keys, $("log").checked);
+  const fits = computeFits(src, k);
+  drawHistory(src, cmp, k, keys, $("yscale").value, fits);
   drawAlign(cmp, k);
   drawMilestones(cmp);
   drawTable(ai, cv, src);
@@ -392,15 +449,16 @@ function render() {
 (async () => {
   const [wiki, tv, doc, recent, top] = await Promise.all([loadJson("data/wiki_daily.json"), loadJson("data/gdelt_tv.json"), loadJson("data/gdelt_doc.json"), loadJson("data/wiki_recent.json"), loadJsonl("data/topstories.jsonl")]);
   if (wiki) { const s = countSource(wiki.daily); s.note = `Wikipedia Current Events: ${Object.keys(wiki.daily).length} days, ${Object.values(wiki.daily).reduce((a, r) => a + r.n, 0).toLocaleString()} curated news items since ${s.first}. Share = AI items ÷ all items in the window.`; SOURCES.wiki = s; }
-  if (tv && Object.keys(tv.series.ai || {}).length) { const s = pctSource(tv.series); s.unit = "cable-news airtime"; s.note = `GDELT TV: percent of 15-second clips on CNN, Fox News and MSNBC mentioning the topic (station average), through ${s.last}.`; SOURCES.tv = s; }
-  if (doc && Object.keys(doc.series.ai || {}).length) { const s = pctSource(doc.series); s.unit = "US online news articles"; s.note = `GDELT DOC: percent of all monitored US English online articles matching the topic query, through ${s.last}.`; SOURCES.doc = s; }
+  const has = j => j && ["ai", "covid"].every(k => Object.keys(j.series[k] || {}).length);
+  if (has(tv)) { const s = pctSource(tv.series); s.unit = "cable-news airtime"; s.note = `GDELT TV: percent of 15-second clips on CNN, Fox News and MSNBC mentioning the topic (station average), through ${s.last}.`; SOURCES.tv = s; }
+  if (has(doc)) { const s = pctSource(doc.series); s.unit = "US online news articles"; s.note = `GDELT DOC: percent of all monitored US English online articles matching the topic query, through ${s.last}.`; SOURCES.doc = s; }
   const names = { wiki: "Wikipedia Current Events (curated items)", tv: "GDELT TV (cable news airtime)", doc: "GDELT DOC (all US online articles)" };
   $("source").innerHTML = Object.keys(SOURCES).map(k => `<option value="${k}">${names[k]}</option>`).join("");
   if (!Object.keys(SOURCES).length) { $("hero").innerHTML = `No data found. Run <code>uv run ai-news-share backfill</code> and serve the <code>docs/</code> folder.`; return; }
   render();
   if (recent) drawRecent(recent);
   drawTop(top);
-  for (const id of ["source", "win", "mode", "showClimate", "log", "cv0", "cv1"]) $(id).addEventListener("input", render);
+  for (const id of ["source", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin"]) $(id).addEventListener("input", render);
 })();
 </script>
 </body>

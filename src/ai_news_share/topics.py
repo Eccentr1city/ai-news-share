@@ -45,12 +45,8 @@ AI = Topic(
         r")(?![\w-])",
         re.I,
     ),
-    gdelt_query=(
-        '("artificial intelligence" OR "generative AI" OR "AI model" OR "AI models" '
-        'OR "AI company" OR "AI companies" OR "AI chatbot" OR "AI safety" OR "AI regulation" '
-        'OR "AI systems" OR "AI industry" OR "AI tools" OR chatgpt OR openai OR anthropic '
-        'OR deepmind OR "large language model" OR "machine learning")'
-    ),
+    # GDELT rejects long queries ("too short or too long"), so keep this compact.
+    gdelt_query='("artificial intelligence" OR "generative AI" OR chatgpt OR openai OR "AI models" OR "AI companies")',
     color="#c2410c",
 )
 

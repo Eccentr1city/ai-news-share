@@ -149,3 +149,76 @@ def compare(
         if match_norm == first_day:
             match_norm = None
     return Comparison(ai_date, ai_now, ai_now_norm, covid_window, (peak_d, win[peak_d]), match, match_norm, ai_b, cv_b, notes)
+
+
+# ---------------------------------------------------------------- growth ---
+# A share p is bounded in [0, 1], so "exponential growth of the share" must
+# saturate. The odds p/(1-p) (AI stories : non-AI stories) are unbounded, and
+# their log is the natural scale for a doubling-time fit. Zero counts are
+# handled with a Jeffreys pseudo-count (0.5) when pooling.
+import math
+
+
+def pooled_log_odds(daily: dict[str, dict], topic: str, k: int = 7, pseudo: float = 0.5) -> dict[str, float | None]:
+    """ln((x + pseudo) / (n - x + pseudo)) over a trailing k-day window of counts."""
+    if not daily:
+        return {}
+    days = sorted(daily)
+    d0, d1 = date.fromisoformat(days[0]), date.fromisoformat(days[-1])
+    out: dict[str, float | None] = {}
+    buf: list[tuple[int, int]] = []
+    for d in daterange(d0, d1):
+        row = daily.get(d.isoformat())
+        buf.append((row[topic], row["n"]) if row else (0, 0))
+        if len(buf) > k:
+            buf.pop(0)
+        x, n = sum(b[0] for b in buf), sum(b[1] for b in buf)
+        out[d.isoformat()] = math.log((x + pseudo) / (n - x + pseudo)) if n else None
+    return out
+
+
+def log_odds_of_share(series: dict[str, float | None], floor: float = 1e-6) -> dict[str, float | None]:
+    """For percentage data (GDELT): logit of the share, flooring tiny values."""
+    out = {}
+    for d, p in series.items():
+        if p is None:
+            out[d] = None
+        else:
+            p = min(max(p, floor), 1 - floor)
+            out[d] = math.log(p / (1 - p))
+    return out
+
+
+@dataclass
+class Fit:
+    start: str
+    end: str
+    n: int
+    slope_per_day: float  # in ln(odds) per day
+    doubling_days: float | None  # ln 2 / slope; None if slope <= 0
+    halving_days: float | None
+    r2: float
+
+
+def fit_doubling(log_series: dict[str, float | None], start: str, end: str) -> Fit | None:
+    """Least-squares line through ln(odds) vs. day over [start, end]."""
+    pts = [(date.fromisoformat(d).toordinal(), v) for d, v in log_series.items() if start <= d <= end and v is not None and math.isfinite(v)]
+    if len(pts) < 5:
+        return None
+    xs, ys = zip(*pts)
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx == 0:
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in pts) / sxx
+    ss_res = sum((y - (my + slope * (x - mx))) ** 2 for x, y in pts)
+    ss_tot = sum((y - my) ** 2 for y in ys) or 1e-12
+    return Fit(
+        start, end, len(pts), slope,
+        math.log(2) / slope if slope > 0 else None,
+        math.log(2) / -slope if slope < 0 else None,
+        1 - ss_res / ss_tot,
+    )
+
+
+COVID_TAKEOFF = ("2020-01-15", "2020-03-15")
