@@ -57,10 +57,14 @@ AI = Topic(
 COVID = Topic(
     key="covid",
     label="Covid",
+    # Deliberately specific: generic words (vaccine, quarantine, lockdown,
+    # pandemic) also describe measles, Ebola and flu stories, which would give
+    # Covid a spurious pre-2020 baseline. On Wikipedia the parent bullet
+    # ("COVID-19 pandemic > ...") carries the topic for almost every item anyway.
     pattern=_rx(
-        r"covid(?:-19)?", r"coronavirus\w*", r"sars-cov-2", r"2019-ncov", r"ncov", r"wuhan (?:virus|pneumonia|outbreak)",
-        r"pandemic", r"lockdowns?", r"social distancing", r"quarantin\w*", r"ventilators?",
-        r"pfizer", r"moderna", r"astrazeneca", r"vaccin\w*", r"omicron", r"delta variant",
+        r"covid(?:-19)?", r"coronavirus\w*", r"sars-cov-2", r"2019-ncov", r"ncov",
+        r"wuhan (?:virus|pneumonia|outbreak)", r"omicron", r"delta variant",
+        r"pfizer(?:-biontech)?", r"moderna", r"astrazeneca", r"novavax",
     ),
     gdelt_query='(coronavirus OR covid OR "covid-19" OR "wuhan virus" OR pandemic OR lockdown OR quarantine)',
     color="#1d4ed8",
