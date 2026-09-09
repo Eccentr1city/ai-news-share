@@ -7,9 +7,9 @@ per day, 5 per minute; one request returns a whole month, so a 2017->today
 backfill is ~120 requests (~25 minutes at the rate limit) and each later run
 refreshes only the current month.
 
-Output: docs/data/nyt_daily.json with, per day, the number of front-page
-articles and how many match each topic (headline + abstract + keywords), plus
-nyt_items.jsonl with every front-page article for auditing.
+Output: docs/data/nyt_daily.json with, per day, the number of A1 (front page)
+articles and how many match each topic (headline + abstract), plus
+nyt_items.jsonl with every page-one article of every section for auditing.
 """
 from __future__ import annotations
 
@@ -41,15 +41,22 @@ def api_key() -> str | None:
     return None
 
 
-def is_front_page(doc: dict) -> bool:
-    return str(doc.get("print_page", "")).strip() == "1" and doc.get("document_type") == "article"
+FRONT_SECTION = "A"  # A1 = the front page; B1/C1/D1 are section fronts
+
+
+def is_page_one(doc: dict) -> bool:
+    """Page 1 of any print section (kept in the item log so the choice can be revisited)."""
+    return str(doc.get("print_page", "")).strip() == "1" and str(doc.get("document_type", "")).lower() == "article"
+
+
+def is_front_page(item: dict) -> bool:
+    return item.get("print_section", "") == FRONT_SECTION
 
 
 def item_from_doc(doc: dict) -> dict:
     headline = (doc.get("headline") or {}).get("main") or ""
     abstract = doc.get("abstract") or doc.get("snippet") or ""
-    keywords = ", ".join(k.get("value", "") for k in doc.get("keywords") or [])
-    text = f"{headline} {abstract} {keywords}"
+    text = f"{headline} {abstract}"  # text only, like the other sources (NYT subject tags are applied liberally)
     return {
         "date": (doc.get("pub_date") or "")[:10],
         "headline": headline,
@@ -73,8 +80,11 @@ def months(start: date, end: date):
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
 
 
-def backfill(data_dir: Path, start: date = START, end: date | None = None, *, budget_s: float = 40 * 60) -> bool:
-    """Fetch months not yet cached (always refresh the current month). Returns False if no key."""
+def backfill(data_dir: Path, start: date = START, end: date | None = None, *, budget_s: float = 40 * 60, refetch_from: str | None = None) -> bool:
+    """Fetch months not yet cached (always refresh the current month). Returns False if no key.
+
+    `refetch_from="2025-01"` discards cached months from that month on.
+    """
     key = api_key()
     if not key:
         log.info("NYT_API_KEY not set; skipping NYT")
@@ -89,6 +99,9 @@ def backfill(data_dir: Path, start: date = START, end: date | None = None, *, bu
             by_month.setdefault(it["date"][:7], []).append(it)
     meta = json.loads(daily_path.read_text())["meta"] if daily_path.exists() else {}
     done = set(meta.get("months_done", []))
+    if refetch_from:
+        done = {m for m in done if m < refetch_from}
+        by_month = {m: v for m, v in by_month.items() if m < refetch_from}
     current = end.strftime("%Y-%m")
     t0 = time.monotonic()
     for y, m in months(start, end):
@@ -103,7 +116,7 @@ def backfill(data_dir: Path, start: date = START, end: date | None = None, *, bu
         except Exception as ex:  # noqa: BLE001
             log.warning("nyt %s failed: %s", tag, str(ex)[:120])
             continue
-        by_month[tag] = [item_from_doc(d) for d in docs if is_front_page(d)]
+        by_month[tag] = [item_from_doc(d) for d in docs if is_page_one(d)]
         done.add(tag)
         log.info("nyt %s: %d articles, %d on page 1", tag, len(docs), len(by_month[tag]))
         _write(by_month, done, items_path, daily_path)  # persist after every month
@@ -120,6 +133,8 @@ def _write(by_month: dict[str, list[dict]], done: set[str], items_path: Path, da
                 text = f"{it['headline']} {it['abstract']}"
                 it["topics"] = {k: t.matches(text) for k, t in TOPICS.items()}
                 f.write(json.dumps(it, ensure_ascii=False) + "\n")
+                if not is_front_page(it):
+                    continue
                 row = daily.setdefault(it["date"], {"n": 0, **{k: 0 for k in TOPICS}})
                 row["n"] += 1
                 for k in TOPICS:
@@ -128,8 +143,8 @@ def _write(by_month: dict[str, list[dict]], done: set[str], items_path: Path, da
         json.dumps(
             {
                 "meta": {
-                    "source": "New York Times Archive API, print page 1 articles",
-                    "unit": "count of front-page articles per day; topic columns match headline+abstract",
+                    "source": "New York Times Archive API, page A1 articles",
+                    "unit": "count of A1 (front page) articles per day; topic columns match headline+abstract",
                     "months_done": sorted(done),
                 },
                 "daily": dict(sorted(daily.items())),
