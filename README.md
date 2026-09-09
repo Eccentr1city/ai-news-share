@@ -97,15 +97,34 @@ dashboard. For the daily job, add the key as a repository secret named
 The regex classifier is reproducible and free, but it has edges. With an
 Anthropic API key (`ANTHROPIC_API_KEY` in `.env` or the environment, and a
 repository secret of the same name for the daily job), `ai-news-share llm`
-labels every item with a small Claude model (`claude-haiku-4-5` by default,
-override with `AI_NEWS_LLM_MODEL`) against a fixed rubric in
-`src/ai_news_share/llm_classify.py`. Items go 25 per request with a JSON
-schema; labels are cached by text hash in `docs/data/llm_labels.jsonl` so each
-item is billed once. Backlogs above 500 items go through the Message Batches
-API at half price (run `llm` again later to ingest the results); the daily
-increment runs synchronously. The whole 2017 → today backlog (~74k items) is
-a few dollars. The dashboard then offers a **Classifier: regex / LLM** switch,
-and the recent-items panel reports where the two disagree.
+labels every item against a fixed rubric in `src/ai_news_share/llm_classify.py`.
+
+**What counts as AI** under that rubric is deliberately narrow: *frontier,
+general-purpose AI* as a society-transforming technology (LLMs, chatbots,
+foundation models, agents, AGI; the frontier labs and their compute; AI
+policy, safety and geopolitics; AI-generated media; effects of such AI on
+jobs, science, warfare). Speculative pieces about general AI and its risks
+count. Narrow machine-learning applications (facial recognition, medical
+imaging, recommenders), self-driving cars, robots and automation in general,
+gene editing, quantum computing, chips in general, and big-tech business news
+do not, unless the item frames them as part of the general-AI story. The
+expectation this encodes: before ~2020 almost nothing qualifies except
+speculative pieces.
+
+**Two stages.** Items go 25 per request with a JSON schema; each label must
+echo the item's first three words, and a label whose echo does not match is
+discarded and that item re-labelled alone (this catches index slips inside a
+chunk). Stage 1 labels everything with a small model (`claude-haiku-4-5`,
+override with `AI_NEWS_LLM_MODEL`); backlogs above 500 items go through the
+Message Batches API at half price (run `llm` again later to ingest). Stage 2,
+`ai-news-share llm --adjudicate`, re-labels every chunk containing an AI
+positive from either classifier with a stronger model (`claude-sonnet-5`) and
+overwrites the stage-1 labels there. Labels are cached by text hash in
+`docs/data/llm_labels.jsonl` with the model that produced them, so each item
+is billed once per stage. The daily increment runs synchronously.
+
+The dashboard offers a **Classifier: regex / LLM** switch, and the
+recent-items panel reports where the two disagree.
 
 ## Honest caveats
 

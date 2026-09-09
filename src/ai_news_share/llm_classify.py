@@ -36,7 +36,7 @@ STATE = "llm_batch_state.json"
 
 SYSTEM = """You label short news items by topic. For each item decide, independently, whether the item is substantially ABOUT each topic below. A passing mention does not count; the topic must be a main subject of the item. When in doubt, answer false.
 
-ai: artificial intelligence as such - AI or machine-learning systems, models, chatbots, agents; AI companies and labs (OpenAI, Anthropic, DeepMind, xAI, Nvidia's AI business, etc.), their products, funding, leadership; chips, compute and data centers built for AI; AI policy, regulation, safety, risk; AI-generated media and deepfakes; AI's effects on work, education, science, warfare, culture. The item must name or unmistakably describe AI/machine learning. Does NOT count: self-driving cars and autonomous vehicles; robots, drones and automation in general; facial recognition or surveillance unless the item frames it as AI; gene editing, biotech, quantum computing, supercomputers, semiconductors or chips in general; social-media bots, hacking, cyberattacks, data privacy; big-tech business news (layoffs, antitrust, executives) unless AI is the subject; "the future of technology" pieces that do not specifically concern AI.
+ai: frontier, general-purpose artificial intelligence - the kind of AI discussed as a technology that could transform society: large language models, chatbots and assistants (ChatGPT, Claude, Gemini, Grok, Copilot), foundation and generative models, AI agents, AGI and superintelligence; the frontier AI labs and companies (OpenAI, Anthropic, Google DeepMind, xAI, Meta AI, Microsoft AI, Nvidia's AI business, DeepSeek, etc.) and their products, funding, leadership, governance; the compute, chips and data centers built for such AI; AI policy, regulation, safety, risk, alignment and the geopolitics of AI; AI-generated text, images, video and deepfakes; and the effects of such AI on jobs, education, science, warfare, culture. Speculative or forward-looking pieces about general AI and its risks count (e.g. warnings by Hawking or Musk about AI, AlphaGo as a milestone toward general AI, debates about autonomous weapons framed as AI). Does NOT count: narrow machine-learning applications (medical image analysis, fraud detection, recommender systems, facial recognition, speech recognition, translation) unless the item presents them as part of the general AI story; self-driving cars and autonomous vehicles; robots, drones and automation in general; gene editing, biotech, quantum computing, supercomputers, semiconductors or chips in general; social-media bots, hacking, cyberattacks, data privacy; big-tech business news (layoffs, antitrust, executives) unless AI is the subject; "the future of technology" pieces that do not specifically concern AI.
 
 covid: the COVID-19 pandemic - cases, deaths, variants, testing, lockdowns and restrictions, covid vaccines, and economic or political consequences explicitly attributed to the pandemic. Not other diseases.
 
@@ -148,24 +148,39 @@ def _create(client: anthropic.Anthropic, chunk, model=None):
         return client.messages.create(**_params(chunk, model))
 
 
-def classify_sync(client: anthropic.Anthropic, data_dir: Path, items: list[tuple[str, str]], model: str | None = None, per_request: int = PER_REQUEST) -> int:
-    """Label items `per_request` at a time; anything whose echo fails is retried alone."""
-    n = 0
-    for chunk in _chunks(items, per_request):
-        resp = _create(client, chunk, model)
-        if resp.stop_reason == "refusal":
-            log.warning("refusal on a chunk; skipping %d items", len(chunk))
-            continue
-        text = next((b.text for b in resp.content if b.type == "text"), "")
-        rows = _parse(chunk, text, model)
-        got = {r["key"] for r in rows}
-        for key, t in chunk:  # retry misaligned/missing items singly
-            if key not in got and per_request > 1:
-                r1 = _create(client, [(key, t)], model)
-                t1 = next((b.text for b in r1.content if b.type == "text"), "")
-                rows.extend(_parse([(key, t)], t1, model))
-        labels.append(data_dir, rows)
-        n += len(rows)
+def _label_chunk(client, chunk, model, per_request) -> list[dict]:
+    resp = _create(client, chunk, model)
+    if resp.stop_reason == "refusal":
+        log.warning("refusal on a chunk; skipping %d items", len(chunk))
+        return []
+    text = next((b.text for b in resp.content if b.type == "text"), "")
+    rows = _parse(chunk, text, model)
+    got = {r["key"] for r in rows}
+    for key, t in chunk:  # retry misaligned/missing items singly
+        if key not in got and per_request > 1:
+            r1 = _create(client, [(key, t)], model)
+            t1 = next((b.text for b in r1.content if b.type == "text"), "")
+            rows.extend(_parse([(key, t)], t1, model))
+    return rows
+
+
+def classify_sync(client: anthropic.Anthropic, data_dir: Path, items: list[tuple[str, str]], model: str | None = None, per_request: int = PER_REQUEST, workers: int = 6) -> int:
+    """Label items `per_request` at a time with a small thread pool; anything whose echo fails is retried alone.
+    Labels are appended per chunk, so an interrupted run keeps its progress."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from threading import Lock
+
+    lock, n = Lock(), 0
+    chunks = list(_chunks(items, per_request))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(_label_chunk, client, ch, model, per_request) for ch in chunks]
+        for i, f in enumerate(as_completed(futs), 1):
+            rows = f.result()
+            with lock:
+                labels.append(data_dir, rows)
+                n += len(rows)
+            if i % 25 == 0:
+                log.info("labelled %d/%d chunks", i, len(chunks))
     return n
 
 
