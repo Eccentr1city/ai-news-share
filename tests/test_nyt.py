@@ -38,3 +38,18 @@ def test_months_iteration():
 
     ms = list(nyt.months(date(2019, 11, 15), date(2020, 2, 1)))
     assert ms == [(2019, 11), (2019, 12), (2020, 1), (2020, 2)]
+
+
+def test_write_unions_search_items_by_url(tmp_path):
+    import json
+    from datetime import date
+    archive_item = nyt.item_from_doc({**DOC, "web_url": "https://nyt.test/a"})
+    dup = nyt.item_from_doc({**DOC, "web_url": "https://nyt.test/a", "headline": {"main": "Same article, search copy"}})
+    new = nyt.item_from_doc({**DOC, "web_url": "https://nyt.test/b", "pub_date": "2024-05-14T01:00:00+0000"})
+    (tmp_path / "nyt_search.json").write_text(json.dumps({"2024-05-14": {"complete": True, "items": [dup, new]}}))
+    nyt._write({"2024-05": [archive_item]}, {"2024-05"}, tmp_path / "nyt_items.jsonl", tmp_path / "nyt_daily.json")
+    rows = [json.loads(l) for l in (tmp_path / "nyt_items.jsonl").read_text().splitlines()]
+    assert sorted(r["url"] for r in rows) == ["https://nyt.test/a", "https://nyt.test/b"]
+    assert [r for r in rows if r["url"].endswith("/a")][0]["headline"] == "OpenAI Unveils New Model"  # archive wins
+    daily = json.loads((tmp_path / "nyt_daily.json").read_text())["daily"]
+    assert daily["2024-05-13"]["n"] == 1 and daily["2024-05-14"]["n"] == 1

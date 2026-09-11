@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from . import http, labels
@@ -74,6 +74,68 @@ def months(start: date, end: date):
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
 
 
+# ---------------------------------------------------------------- top-up ---
+# The Archive endpoint trails by about a week; Article Search indexes within
+# hours and carries the same print fields, but its `fq` filter ignores them, so
+# we page through every article of a day (10 per page, 5 requests/min) and
+# keep page-one items client-side. Cached per day in nyt_search.json.
+SEARCH_URL = "https://api.nytimes.com/svc/search/v2/articlesearch.json"
+SEARCH_INTERVAL = 13.0
+TOPUP_DAYS = 12
+RECHECK_DAYS = 3  # print fields for the newest days can still be filled in
+
+
+def search_day(day: date, key: str, max_pages: int = 40) -> tuple[list[dict], bool]:
+    """All page-one items published on `day`, via Article Search. Returns (items, complete)."""
+    ymd = day.strftime("%Y%m%d")
+    docs, hits = [], None
+    for p in range(max_pages):
+        r = http.get(SEARCH_URL, {"api-key": key, "begin_date": ymd, "end_date": ymd, "page": p, "sort": "oldest"}, min_interval=SEARCH_INTERVAL, tries=4)
+        resp = r.json().get("response", {})
+        got = resp.get("docs") or []
+        docs += got
+        hits = hits or (resp.get("metadata") or resp.get("meta") or {}).get("hits")
+        if not got or (hits and len(docs) >= hits):
+            return [item_from_doc(d) for d in docs if is_page_one(d)], True
+    return [item_from_doc(d) for d in docs if is_page_one(d)], False
+
+
+def topup(data_dir: Path, *, days: int = TOPUP_DAYS, budget_s: float = 30 * 60) -> bool:
+    """Fetch page-one items for the last `days` days from Article Search into nyt_search.json."""
+    key = api_key()
+    if not key:
+        return False
+    path = data_dir / "nyt_search.json"
+    cache = json.loads(path.read_text()) if path.exists() else {}
+    today = date.today()
+    t0 = time.monotonic()
+    for i in range(days, -1, -1):
+        d = today - timedelta(days=i)
+        tag = d.isoformat()
+        fresh = i < RECHECK_DAYS
+        if tag in cache and cache[tag].get("complete") and not fresh:
+            continue
+        if time.monotonic() - t0 > budget_s:
+            log.warning("nyt search: budget exhausted at %s", tag)
+            break
+        try:
+            items, complete = search_day(d, key)
+        except Exception as ex:  # noqa: BLE001
+            log.warning("nyt search %s failed: %s", tag, type(ex).__name__)
+            continue
+        cache[tag] = {"fetched": today.isoformat(), "complete": complete, "items": items}
+        log.info("nyt search %s: %d page-one items (%d A1)", tag, len(items), sum(is_front_page(x) for x in items))
+        path.write_text(json.dumps(cache, ensure_ascii=False))
+    return True
+
+
+def _search_items(data_dir: Path) -> list[dict]:
+    path = data_dir / "nyt_search.json"
+    if not path.exists():
+        return []
+    return [it for day in json.loads(path.read_text()).values() for it in day.get("items", [])]
+
+
 def backfill(data_dir: Path, start: date = START, end: date | None = None, *, budget_s: float = 40 * 60, refetch_from: str | None = None) -> bool:
     """Fetch months not yet cached (always refresh the current month). Returns False if no key.
 
@@ -114,12 +176,21 @@ def backfill(data_dir: Path, start: date = START, end: date | None = None, *, bu
         done.add(tag)
         log.info("nyt %s: %d articles, %d on page 1", tag, len(docs), len(by_month[tag]))
         _write(by_month, done, items_path, daily_path)  # persist after every month
+    topup(data_dir, budget_s=max(60.0, budget_s - (time.monotonic() - t0)))
     _write(by_month, done, items_path, daily_path)
     return True
 
 
 def _write(by_month: dict[str, list[dict]], done: set[str], items_path: Path, daily_path: Path) -> None:
-    """Re-classify with the current patterns and write both files."""
+    """Re-classify with the current patterns and write both files.
+
+    Items from the Article Search top-up are unioned in by URL; Archive items win when both exist."""
+    by_month = {m: list(v) for m, v in by_month.items()}
+    seen = {it["url"] for v in by_month.values() for it in v if it.get("url")}
+    for it in _search_items(items_path.parent):
+        if it.get("url") and it["url"] not in seen and it["date"]:
+            by_month.setdefault(it["date"][:7], []).append(it)
+            seen.add(it["url"])
     daily: dict[str, dict] = {}
     with items_path.open("w") as f:
         for tag in sorted(by_month):
