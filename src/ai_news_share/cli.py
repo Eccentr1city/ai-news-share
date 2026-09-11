@@ -68,6 +68,8 @@ def cmd_llm(args) -> None:
 
 def cmd_snapshot(args) -> None:
     googlenews.snapshot(DATA)
+    if getattr(args, "wayback", False):
+        googlenews.backfill_wayback(DATA, budget_s=60 * args.budget_minutes, limit=args.limit)
 
 
 def load_daily() -> dict:
@@ -159,6 +161,9 @@ def main(argv=None) -> None:
     l.add_argument("--dry-run", action="store_true")
     l.set_defaults(fn=cmd_llm)
     s = sub.add_parser("snapshot")
+    s.add_argument("--wayback", action="store_true", help="also fetch historical Google News captures from the Wayback Machine")
+    s.add_argument("--budget-minutes", type=float, default=30)
+    s.add_argument("--limit", type=int, default=100, help="max captures per run")
     s.set_defaults(fn=cmd_snapshot)
     r = sub.add_parser("report")
     r.add_argument("--window", type=int, default=7)
