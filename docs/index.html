@@ -60,6 +60,10 @@
   details summary { cursor: pointer; color: var(--text-2); }
   code { font-size: 13px; background: var(--grid); padding: 1px 5px; border-radius: 4px; }
   .muted { color: var(--text-3); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  .tabs button { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text-2); font-size: 13.5px; }
+  .tabs button[aria-pressed="true"] { background: var(--text); color: var(--card); border-color: var(--text); font-weight: 600; }
+  .tabs button:hover:not([aria-pressed="true"]) { border-color: var(--text-3); color: var(--text); }
   .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 12px 0 6px; }
   @media (max-width: 720px) { .duo { grid-template-columns: 1fr; } }
   .panel h3 { font-size: 13.5px; font-weight: 600; margin: 0 0 4px; color: var(--text-2); }
@@ -77,22 +81,21 @@
   <p class="sub">Of the top news stories, what fraction are about <b>AI</b>? Measured with the same instrument as <b>Covid</b> in early 2020, so the two curves can be laid on one axis and read against the political milestones of that spring.</p>
 
   <div class="card">
+    <div class="tabs" id="sourceTabs" role="tablist" aria-label="Data source"></div>
+    <select id="source" hidden></select>
     <div id="hero" class="hero">Loading data…</div>
-    <div class="controls">
-      <label>Source <select id="source"></select></label>
-      <label>Window <select id="win"><option>7</option><option selected>14</option><option>28</option><option>56</option></select> days</label>
-      <label id="clfWrap" hidden>Classifier <select id="clf"><option value="">regex</option><option value="_llm">LLM: frontier AI rubric</option></select></label>
-      <label>Match on <select id="mode"><option value="level">coverage level</option><option value="mult">multiple of own baseline</option></select></label>
-      <label><input type="checkbox" id="showClimate"> show climate as a reference</label>
-      <label>Y scale <select id="yscale"><option value="lin">linear</option><option value="log">log</option><option value="logit" selected>log odds (topic : rest)</option></select></label>
-    </div>
     <p class="note" id="srcNote" style="margin:12px 0 0"></p>
+    <div class="controls">
+      <label id="clfWrap" hidden>Classifier <select id="clf"><option value="">regex</option><option value="_llm">LLM: frontier AI rubric</option></select></label>
+      <label>Window <select id="win"><option>7</option><option selected>14</option><option>28</option><option>56</option></select> days</label>
+    </div>
   </div>
 
   <h2>AI's trajectory laid over Covid's spring</h2>
   <div class="card">
     <div class="controls" style="margin:0 0 10px">
       <label>Covid window <input type="date" id="cv0" value="2019-12-01"> → <input type="date" id="cv1" value="2020-06-30"></label>
+      <label>Match on <select id="mode"><option value="level">coverage level</option><option value="mult">multiple of own baseline</option></select></label>
     </div>
     <div class="legend" id="legend2"></div>
     <div class="chart"><svg id="align" viewBox="0 0 960 400"></svg><div class="tip" id="tip2"></div></div>
@@ -117,6 +120,10 @@
 
   <h2>Full history</h2>
   <div class="card">
+    <div class="controls" style="margin:0 0 10px">
+      <label>Y scale <select id="yscale"><option value="lin">linear</option><option value="log">log</option><option value="logit" selected>log odds (topic : rest)</option></select></label>
+      <label><input type="checkbox" id="showClimate"> show climate as a reference</label>
+    </div>
     <div class="legend" id="legend1"></div>
     <div class="chart"><svg id="hist" viewBox="0 0 960 340"></svg><div class="tip" id="tip1"></div></div>
     <p class="note">Rolling-window log odds (or share). Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the section above (computed with the fit windows set there).</p>
@@ -417,7 +424,7 @@ function computeFits(selected) {
   const [c0, c1, a0, a1] = [$("ft0").value, $("ft1").value, $("ai0").value, $("ai1").value];
   const grid = $("fitGrid"), rows = [];
   let selectedFits = null;
-  for (const key of SOURCE_ORDER.filter(k => SOURCES[k])) {
+  for (const key of SOURCE_ORDER.filter(k => SOURCES[k] && !SOURCES[k].noCovid)) {
     const s = SOURCES[key];
     if (s.setClassifier) s.setClassifier(s.hasLlm ? $("clf").value : "");
     if (!$(`fitrow_${key}`)) grid.insertAdjacentHTML("beforeend", fitsRowHtml(key));
@@ -533,6 +540,7 @@ async function loadJsonl(p) { try { const r = await fetch(p); return r.ok ? (awa
 
 function render() {
   const src = SOURCES[$("source").value]; if (!src) return;
+  for (const b of document.querySelectorAll("#sourceTabs button")) b.setAttribute("aria-pressed", String(b.dataset.src === $("source").value));
   $("clfWrap").hidden = !src.hasLlm; if (!src.hasLlm) $("clf").value = "";
   if (src.setClassifier) src.setClassifier($("clf").value);
   const k = +$("win").value, mode = $("mode").value, cv0 = $("cv0").value, cv1 = $("cv1").value;
@@ -568,10 +576,13 @@ function render() {
   if (top && top.length) {
     const daily = {};
     for (const r of top.filter(r => r.feed === "google_top" || r.feed === "google_top_wayback")) { const dd = r.ts.slice(0, 10); const row = daily[dd] || (daily[dd] = { n: 0, ai: 0, covid: 0, climate: 0 }); row.n += r.n; row.ai += r.ai || 0; row.covid += r.covid || 0; row.climate += r.climate || 0; }
-    const s = countSource(daily); s.unit = "Google top stories"; s.fitOnly = true; s.covidNote = `No Covid-era data: collection began ${s.first}.`;
+    const s = countSource(daily); s.unit = "Google top stories"; s.noCovid = true; s.covidNote = `No Covid-era data: collection began ${s.first}.`;
     s.note = `Google News “Top stories” (US): daily snapshots of ~40 headlines since 2026-09-09, plus Wayback Machine captures of the same feed back to ${s.first} (sparse: every few days in 2017–18, roughly monthly 2019–23, weekly 2024–25; none during the Covid takeoff).`; SOURCES.google = s;
   }
-  $("source").innerHTML = Object.keys(SOURCES).filter(k => !SOURCES[k].fitOnly).map(k => `<option value="${k}">${SOURCE_NAMES[k]}</option>`).join("");
+  const heroKeys = SOURCE_ORDER.filter(k => SOURCES[k] && !SOURCES[k].noCovid);
+  $("source").innerHTML = heroKeys.map(k => `<option value="${k}">${SOURCE_NAMES[k]}</option>`).join("");
+  $("sourceTabs").innerHTML = heroKeys.map(k => `<button type="button" role="tab" data-src="${k}" aria-pressed="${k === $("source").value}">${SOURCE_NAMES[k]}</button>`).join("");
+  $("sourceTabs").addEventListener("click", e => { const b = e.target.closest("button[data-src]"); if (!b) return; $("source").value = b.dataset.src; $("source").dispatchEvent(new Event("input")); });
   if (!Object.keys(SOURCES).length) { $("hero").innerHTML = `No data found. Run <code>uv run ai-news-share backfill</code> and serve the <code>docs/</code> folder.`; return; }
   render();
   if (recent) drawRecent(recent);
