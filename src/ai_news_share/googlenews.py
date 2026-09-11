@@ -132,6 +132,7 @@ def backfill_wayback(data_dir: _Path, *, budget_s: float = 30 * 60, limit: int =
             for k in TOPICS:
                 row[k] = sum(1 for it in items if it["topics"][k])
             fs.write(json.dumps(row) + "\n")
+            fs.flush(); fr.flush()  # progress is visible and survives interruption
             n += 1
             log.info("wayback %s: %d headlines, %d AI, %d covid", iso[:10], row["n"], row["ai"], row["covid"])
     return n
