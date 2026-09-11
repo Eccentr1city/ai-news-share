@@ -39,6 +39,8 @@ def get(url: str, params: dict | None = None, *, min_interval: float = 0.0, trie
             if attempt == tries - 1:
                 raise
             backoff = 5 * (attempt + 1)
-            log.warning("%s -> %s; retrying in %ss", url, e, backoff)
+            # Never log str(e): httpx includes the full URL, and query strings may carry API keys.
+            what = f"HTTP {e.response.status_code}" if isinstance(e, httpx.HTTPStatusError) and e.response is not None else type(e).__name__
+            log.warning("%s -> %s; retrying in %ss", url, what, backoff)
             time.sleep(backoff)
     raise RuntimeError("unreachable")
