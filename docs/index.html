@@ -63,6 +63,10 @@
   .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 12px 0 6px; }
   @media (max-width: 720px) { .duo { grid-template-columns: 1fr; } }
   .panel h3 { font-size: 13.5px; font-weight: 600; margin: 0 0 4px; color: var(--text-2); }
+  .fitrow { padding: 14px 0 6px; border-top: 1px solid var(--line); }
+  .fitrow:first-child { border-top: 0; padding-top: 4px; }
+  .fitrow h3 { font-size: 15px; margin: 0 0 2px; }
+  .fitrow .sum { font-size: 13px; color: var(--text-2); margin: 4px 0 0; }
   .panel .fitlbl { font-size: 12px; fill: var(--text); font-weight: 600; }
   a { color: var(--accent); }
 </style>
@@ -103,11 +107,8 @@
       <label><input type="date" id="ai0"> → <input type="date" id="ai1"></label>
       <label>window <input type="number" id="fitkAi" value="14" min="1" max="120" style="width:58px"> days</label>
     </div>
-    <div class="duo">
-      <div class="panel"><h3>Covid: log odds of a top story being about Covid</h3><div class="chart"><svg id="fitCv" viewBox="0 0 470 270"></svg><div class="tip" id="tipCv"></div></div></div>
-      <div class="panel"><h3>AI: log odds of a top story being about AI</h3><div class="chart"><svg id="fitAi" viewBox="0 0 470 270"></svg><div class="tip" id="tipAi"></div></div></div>
-    </div>
-    <table id="fits"><thead><tr><th>Series</th><th>Fit range</th><th class="n">Window</th><th class="n">Days</th><th class="n">Odds change</th><th class="n">r²</th></tr></thead><tbody></tbody></table>
+    <div id="fitGrid"></div>
+    <table id="fits"><thead><tr><th>Source</th><th>Series</th><th>Fit range</th><th class="n">Window</th><th class="n">Days</th><th class="n">Odds change</th><th class="n">r²</th></tr></thead><tbody></tbody></table>
     <p class="note" id="fitNote" style="margin-top:10px"></p>
   </div>
 
@@ -394,25 +395,50 @@ function syncAiWindow(src) { // the select fills the date inputs; the inputs are
 }
 
 const clampK = id => Math.min(120, Math.max(1, +$(id).value || 14));
-function computeFits(src) {
+const rateTxt = f => f.doubling ? `doubles every ${f.doubling < 60 ? f.doubling.toFixed(0) + " days" : (f.doubling / 365).toFixed(1) + " years"}` : f.halving ? `halves every ${f.halving < 60 ? f.halving.toFixed(0) + " days" : (f.halving / 365).toFixed(1) + " years"}` : "flat";
+const fitsRowHtml = key => `<div class="fitrow" id="fitrow_${key}"><h3></h3>
+  <div class="duo">
+    <div class="panel"><h3>Covid: log odds of a top story being about Covid</h3><div class="chart"><svg id="fitCv_${key}" viewBox="0 0 470 270"></svg><div class="tip" id="tipCv_${key}"></div></div></div>
+    <div class="panel"><h3>AI: log odds of a top story being about AI</h3><div class="chart"><svg id="fitAi_${key}" viewBox="0 0 470 270"></svg><div class="tip" id="tipAi_${key}"></div></div></div>
+  </div><p class="sum"></p></div>`;
+
+// One row per source, all sharing the same windows. Returns the selected source's fits (for the history chart).
+function computeFits(selected) {
   const kCv = clampK("fitkCv"), kAi = clampK("fitkAi");
-  syncAiWindow(src);
-  const loCv = src.logOdds("covid", kCv), loAi = src.logOdds("ai", kAi);
-  const fits = [["covid", fitDoubling(loCv, $("ft0").value, $("ft1").value)], ["ai", fitDoubling(loAi, $("ai0").value, $("ai1").value)]];
-  fits[0].push(kCv); fits[1].push(kAi);
-  drawFitPanel("fitCv", "tipCv", loCv, fits[0][1], "covid", $("ft0").value, $("ft1").value, src, kCv);
-  drawFitPanel("fitAi", "tipAi", loAi, fits[1][1], "ai", $("ai0").value, $("ai1").value, src, kAi);
-  const rate = f => f.doubling ? `doubles every ${f.doubling < 60 ? f.doubling.toFixed(0) + " days" : (f.doubling / 365).toFixed(1) + " years"}` : f.halving ? `halves every ${f.halving < 60 ? f.halving.toFixed(0) + " days" : (f.halving / 365).toFixed(1) + " years"}` : "flat";
-  $("fits").querySelector("tbody").innerHTML = fits.map(([key, f, kk]) => f ? `<tr><td><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:${COLORS[key]}"></span>${LABELS[key]}</td><td>${f.a} → ${f.b}</td><td class="n">${kk} d</td><td class="n">${f.n}</td><td class="n">${rate(f)}</td><td class="n">${f.r2.toFixed(2)}</td></tr>` : `<tr><td>${LABELS[key]}</td><td colspan="5" class="muted">not enough data in window</td></tr>`).join("");
-  const c = fits[0][1], a = fits[1][1];
-  $("fitNote").textContent = c && a ? `Read: during its takeoff Covid's odds of being a top story ${rate(c)} (r² ${c.r2.toFixed(2)}). Over the chosen AI window the odds ${rate(a)} (r² ${a.r2.toFixed(2)}); an r² near zero means there is no sustained trend, only spikes. Log odds use a ${kCv}-day window for Covid and ${kAi}-day for AI (set above; the hero and history chart use their own window); shorter windows are noisier, longer ones lag.` : "";
-  return fits;
+  syncAiWindow(selected);
+  const [c0, c1, a0, a1] = [$("ft0").value, $("ft1").value, $("ai0").value, $("ai1").value];
+  const grid = $("fitGrid"), rows = [];
+  let selectedFits = null;
+  for (const key of SOURCE_ORDER.filter(k => SOURCES[k])) {
+    const s = SOURCES[key];
+    if (s.setClassifier) s.setClassifier(s.hasLlm ? $("clf").value : "");
+    if (!$(`fitrow_${key}`)) grid.insertAdjacentHTML("beforeend", fitsRowHtml(key));
+    $(`fitrow_${key}`).querySelector("h3").textContent = SOURCE_NAMES[key];
+    const loCv = s.logOdds("covid", kCv), loAi = s.logOdds("ai", kAi);
+    // If the source ends before the AI window (cable TV stops in 2024), use the same-length window ending at its last date.
+    let [x0, x1, shifted] = [a0, a1, false];
+    if (s.last < a1 && fitDoubling(loAi, a0, a1) == null) { x1 = s.last; x0 = addD(s.last, -daysBetween(a0, a1)); shifted = true; }
+    const fits = [["covid", fitDoubling(loCv, c0, c1), kCv], ["ai", fitDoubling(loAi, x0, x1), kAi]];
+    drawFitPanel(`fitCv_${key}`, `tipCv_${key}`, loCv, fits[0][1], "covid", c0, c1, s, kCv, s.covidNote);
+    drawFitPanel(`fitAi_${key}`, `tipAi_${key}`, loAi, fits[1][1], "ai", x0, x1, s, kAi);
+    const [c, a] = [fits[0][1], fits[1][1]];
+    $(`fitrow_${key}`).querySelector(".sum").textContent =
+      (c ? `Covid takeoff: odds ${rateTxt(c)} (r² ${c.r2.toFixed(2)}).` : "Covid takeoff: no data in this window.") + " " +
+      (a ? `AI window${shifted ? ` (shifted to ${x0} → ${x1}, the last data this source has)` : ""}: odds ${rateTxt(a)} (r² ${a.r2.toFixed(2)}).` : `AI window: not enough data (${s.first} → ${s.last}).`);
+    for (const [k2, f, kk] of fits) rows.push([key, k2, f, kk]);
+    if (s === selected) selectedFits = fits;
+  }
+  $("fits").querySelector("tbody").innerHTML = rows.map(([sk, key, f, kk]) => f
+    ? `<tr><td>${SOURCE_SHORT[sk]}</td><td><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:${COLORS[key]}"></span>${LABELS[key]}</td><td>${f.a} → ${f.b}</td><td class="n">${kk} d</td><td class="n">${f.n}</td><td class="n">${rateTxt(f)}</td><td class="n">${f.r2.toFixed(2)}</td></tr>`
+    : `<tr><td>${SOURCE_SHORT[sk]}</td><td>${LABELS[key]}</td><td colspan="5" class="muted">not enough data in window</td></tr>`).join("");
+  $("fitNote").textContent = `Each row is one data source measured over the same two windows: Covid ${c0} → ${c1} with a ${kCv}-day window, AI ${a0} → ${a1} with a ${kAi}-day window. A least-squares line through ln(odds) gives the doubling time; r² near zero means spikes with no sustained trend. The dashed fit lines on the history chart belong to the source selected at the top.`;
+  return selectedFits || [];
 }
 
-function drawFitPanel(svgId, tipId, lo, fit, key, a, b, src, k) {
+function drawFitPanel(svgId, tipId, lo, fit, key, a, b, src, k, emptyMsg) {
   const svg = $(svgId), W = 470, H = 270, L = 58, R = 14, T = 30, B = 30;
-  const pts = lo.filter(([d, v]) => d >= a && d <= b);
-  if (pts.length < 2) { svg.innerHTML = `<text class="lbl" x="${L}" y="${H / 2}">No data in this window.</text>`; return; }
+  const pts = lo.filter(([d, v]) => d >= a && d <= b && v != null);
+  if (pts.length < 2) { svg.innerHTML = `<text class="lbl" x="${L}" y="${H / 2}">${emptyMsg || "No data in this window."}</text>`; return; }
   const t0 = toT(a), t1 = toT(b);
   const sx = d => lin(t0, t1, L, W - R)(toT(d));
   const vals = pts.map(x => x[1]).concat(fit ? [fit.at(a), fit.at(b)] : []);
@@ -491,6 +517,9 @@ function drawRecent(items) {
 
 // ---------- app ----------
 const SOURCES = {};
+const SOURCE_NAMES = { wiki: "Wikipedia Current Events (curated items)", nyt: "NYT front page (A1 articles)", google: "Google News top stories (daily snapshots)", tv: "GDELT TV (cable news airtime)", doc: "GDELT DOC (all US online articles)" };
+const SOURCE_ORDER = ["wiki", "nyt", "google", "tv", "doc"];
+const SOURCE_SHORT = { wiki: "Wikipedia", nyt: "NYT A1", google: "Google top", tv: "Cable TV", doc: "GDELT DOC" };
 async function loadJson(p) { try { const r = await fetch(p); return r.ok ? await r.json() : null; } catch { return null; } }
 async function loadJsonl(p) { try { const r = await fetch(p); return r.ok ? (await r.text()).trim().split("\n").filter(Boolean).map(JSON.parse) : []; } catch { return []; } }
 
@@ -528,8 +557,13 @@ function render() {
   const has = j => j && Object.keys(j.series.covid || {}).some(d => d.startsWith("2020-03")) && Object.keys(j.series.ai || {}).length > 365;
   if (has(tv)) { const s = pctSource(tv.series); s.unit = "cable-news airtime"; s.note = `GDELT TV: percent of 15-second clips on CNN, Fox News and MSNBC mentioning the topic (station average), through ${s.last}.`; SOURCES.tv = s; }
   if (has(doc)) { const s = pctSource(doc.series); s.unit = "US online news articles"; s.note = `GDELT DOC: percent of all monitored US English online articles matching the topic query, through ${s.last}.`; SOURCES.doc = s; }
-  const names = { wiki: "Wikipedia Current Events (curated items)", nyt: "NYT front page (A1 articles)", tv: "GDELT TV (cable news airtime)", doc: "GDELT DOC (all US online articles)" };
-  $("source").innerHTML = Object.keys(SOURCES).map(k => `<option value="${k}">${names[k]}</option>`).join("");
+  if (top && top.length) {
+    const daily = {};
+    for (const r of top.filter(r => r.feed === "google_top")) { const dd = r.ts.slice(0, 10); const row = daily[dd] || (daily[dd] = { n: 0, ai: 0, covid: 0, climate: 0 }); row.n += r.n; row.ai += r.ai || 0; row.covid += r.covid || 0; row.climate += r.climate || 0; }
+    const s = countSource(daily); s.unit = "Google top stories"; s.fitOnly = true; s.covidNote = `No Covid-era data: collection began ${s.first}.`;
+    s.note = `Google News “Top stories” (US): daily snapshots of ~40 headlines since ${s.first}.`; SOURCES.google = s;
+  }
+  $("source").innerHTML = Object.keys(SOURCES).filter(k => !SOURCES[k].fitOnly).map(k => `<option value="${k}">${SOURCE_NAMES[k]}</option>`).join("");
   if (!Object.keys(SOURCES).length) { $("hero").innerHTML = `No data found. Run <code>uv run ai-news-share backfill</code> and serve the <code>docs/</code> folder.`; return; }
   render();
   if (recent) drawRecent(recent);
