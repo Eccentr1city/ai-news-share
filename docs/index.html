@@ -84,16 +84,19 @@
       <label id="clfWrap" hidden>Classifier <select id="clf"><option value="">regex</option><option value="_llm">LLM: frontier AI rubric</option></select></label>
       <label>Match on <select id="mode"><option value="level">coverage level</option><option value="mult">multiple of own baseline</option></select></label>
       <label><input type="checkbox" id="showClimate"> show climate as a reference</label>
-      <label>Y scale <select id="yscale"><option value="lin">linear</option><option value="log">log</option><option value="logit">log odds (topic : rest)</option></select></label>
+      <label>Y scale <select id="yscale"><option value="lin">linear</option><option value="log">log</option><option value="logit" selected>log odds (topic : rest)</option></select></label>
     </div>
     <p class="note" id="srcNote" style="margin:12px 0 0"></p>
   </div>
 
-  <h2>Full history</h2>
+  <h2>AI's trajectory laid over Covid's spring</h2>
   <div class="card">
-    <div class="legend" id="legend1"></div>
-    <div class="chart"><svg id="hist" viewBox="0 0 960 340"></svg><div class="tip" id="tip1"></div></div>
-    <p class="note">Rolling-window share (or log odds). Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the next section (computed with the fit window set there).</p>
+    <div class="controls" style="margin:0 0 10px">
+      <label>Covid window <input type="date" id="cv0" value="2019-12-01"> → <input type="date" id="cv1" value="2020-06-30"></label>
+    </div>
+    <div class="legend" id="legend2"></div>
+    <div class="chart"><svg id="align" viewBox="0 0 960 400"></svg><div class="tip" id="tip2"></div></div>
+    <p class="note" id="alignNote"></p>
   </div>
 
   <h2>How fast is it growing? Doubling time of the odds</h2>
@@ -112,14 +115,11 @@
     <p class="note" id="fitNote" style="margin-top:10px"></p>
   </div>
 
-  <h2>AI's trajectory laid over Covid's spring</h2>
+  <h2>Full history</h2>
   <div class="card">
-    <div class="controls" style="margin:0 0 10px">
-      <label>Covid window <input type="date" id="cv0" value="2019-12-01"> → <input type="date" id="cv1" value="2020-06-30"></label>
-    </div>
-    <div class="legend" id="legend2"></div>
-    <div class="chart"><svg id="align" viewBox="0 0 960 400"></svg><div class="tip" id="tip2"></div></div>
-    <p class="note" id="alignNote"></p>
+    <div class="legend" id="legend1"></div>
+    <div class="chart"><svg id="hist" viewBox="0 0 960 340"></svg><div class="tip" id="tip1"></div></div>
+    <p class="note">Rolling-window log odds (or share). Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the section above (computed with the fit windows set there).</p>
   </div>
 
   <h2>What level of coverage went with which action?</h2>
@@ -344,18 +344,22 @@ function drawHistory(src, cmp, k, keys, yscale, fits) {
   } });
 }
 
-function drawAlign(cmp, k) {
-  const svg = $("align"), W = 960, H = 400, L = 54, R = 20, T = 96, B = 36;
+function drawAlign(cmp, k, src) {
+  const svg = $("align"), W = 960, H = 400, L = 62, R = 20, T = 96, B = 36;
   const win = cmp.win, n = win.length; if (!n) { svg.innerHTML = ""; return; }
   const matchIdx = cmp.match ? win.findIndex(x => x[0] === cmp.match) : (cmp.aiNow > cmp.peak[1] ? n - 1 : 0);
+  // y values: level mode -> ln(odds) from the source (pseudo-count for counts); multiple-of-baseline mode -> ln(ratio)
+  const loAi = new Map(src.logOdds("ai", k)), loCv = new Map(src.logOdds("covid", k));
+  const yOf = (d, v, isAi) => cmp.norm ? (v > 0 ? Math.log(v) : null) : (isAi ? loAi : loCv).get(d) ?? null;
+  const fmtY = cmp.norm ? v => `${nice(Math.exp(v))}×` : fmtOdds;
   const aiAll = cmp.aiNorm.filter(x => x[1] != null);
   const tail = aiAll.slice(-(matchIdx + 1));
-  const aiPts = tail.map((x, i) => [matchIdx - (tail.length - 1) + i, x[1], x[0]]);
-  const cvPts = win.map((x, i) => [i, x[1], x[0]]);
+  const aiPts = tail.map((x, i) => [matchIdx - (tail.length - 1) + i, yOf(x[0], x[1], true), x[0]]).filter(p => p[1] != null && isFinite(p[1]));
+  const cvPts = win.map((x, i) => [i, yOf(x[0], x[1], false), x[0]]).filter(p => p[1] != null && isFinite(p[1]));
   const sx = lin(0, n - 1, L, W - R);
-  const { s: sy, ticks } = yScale([...aiPts, ...cvPts].map(x => x[1]), T, H - B, false);
+  const { s: sy, ticks } = yScale([...aiPts, ...cvPts].map(x => x[1]), T, H - B, false, true);
   let g = `<g class="grid">${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/>`).join("")}</g>`;
-  g += `<g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fmtV(v, cmp.norm)}</text>`).join("")}`;
+  g += `<g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fmtY(v)}</text>`).join("")}`;
   win.forEach(([d], i) => { if (d.endsWith("-01")) g += `<line x1="${sx(i)}" x2="${sx(i)}" y1="${H - B}" y2="${H - B + 5}"/><text x="${sx(i)}" y="${H - 14}" text-anchor="middle">${new Date(toT(d)).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })}</text>`; });
   g += `</g>`;
   // milestones: vertical hairlines; labels packed greedily into rows so none collide
@@ -371,20 +375,24 @@ function drawAlign(cmp, k) {
   g += `</g>`;
   g += `<path class="series" d="${pathOf(cvPts, sx, sy)}" stroke="${COLORS.covid}"/>`;
   g += `<path class="series" d="${pathOf(aiPts, sx, sy)}" stroke="${COLORS.ai}"/>`;
-  const px = sx(matchIdx), py = sy(cmp.aiNow);
-  g += `<circle cx="${px}" cy="${py}" r="6" fill="${COLORS.ai}" stroke="var(--card)" stroke-width="2"/>`;
-  g += `<text class="lbl" x="${px + 10}" y="${py - 10}">AI today${cmp.match ? " ≙ " + cmp.match : ""}</text>`;
+  const todayPt = aiPts[aiPts.length - 1];
+  if (todayPt) {
+    const px = sx(todayPt[0]), py = sy(todayPt[1]);
+    g += `<circle cx="${px}" cy="${py}" r="6" fill="${COLORS.ai}" stroke="var(--card)" stroke-width="2"/>`;
+    g += `<text class="lbl" x="${px + 10}" y="${py - 10}">AI today${cmp.match ? " ≙ " + cmp.match : ""}</text>`;
+  }
+  g += `<text class="lbl" x="${L}" y="${H - B + 30}" style="display:none"></text>`;
   svg.innerHTML = g;
   const cvBy = new Map(cvPts.map(p => [p[0], p])), aiBy = new Map(aiPts.map(p => [p[0], p]));
   hover(svg, $("tip2"), { L, R, T, B, W, H, xOf: i => sx(i), dateAt: x => Math.round(lin(L, W - R, 0, n - 1)(x)), rows: i => {
     const c = cvBy.get(i), a = aiBy.get(i); const out = [];
-    if (c) out.push({ text: `<b>${longDate(c[2])}</b>` }, { key: "covid", label: "Covid", value: fmtV(c[1], cmp.norm) });
-    if (a) out.push({ key: "ai", label: `AI on ${a[2]}`, value: fmtV(a[1], cmp.norm) });
+    if (c) out.push({ text: `<b>${longDate(c[2])}</b>` }, { key: "covid", label: cmp.norm ? "Covid ÷ baseline" : "Covid odds", value: fmtY(c[1]) });
+    if (a) out.push({ key: "ai", label: `AI on ${a[2]}${cmp.norm ? " ÷ baseline" : " odds"}`, value: fmtY(a[1]) });
     const ms = COVID_MS.find(([d]) => c && d === c[2]); if (ms) out.push({ text: `<span class="muted">${ms[1]}</span>` });
     return out.length ? out : null;
   } });
   const b = cmp.norm ? ` Baselines: AI ${fmtV(cmp.aiBase)} (2017 mean), Covid ${fmtV(cmp.cvBase)} (Jan–Nov 2019 mean).` : "";
-  $("alignNote").textContent = `The AI line is the most recent ${tail.length} days of AI coverage, ending today, slid along the axis so that today sits on ${cmp.match ? "the first Covid date with the same " + (cmp.norm ? "multiple of baseline" : "share") : (cmp.aiNow > cmp.peak[1] ? "the end of the window (AI is above Covid's peak)" : "the start of the window (AI is at or below Covid's level there)")}. Covid peaked at ${fmtV(cmp.peak[1], cmp.norm)} on ${cmp.peak[0]} (${k}-day window).${b}`;
+  $("alignNote").textContent = `Log-odds scale (a top story being about the topic : not). The AI line is the most recent ${tail.length} days of AI coverage, ending today, slid along the axis so that today sits on ${cmp.match ? "the first Covid date with the same " + (cmp.norm ? "multiple of baseline" : "share") : (cmp.aiNow > cmp.peak[1] ? "the end of the window (AI is above Covid's peak)" : "the start of the window (AI is at or below Covid's level there)")}. Covid peaked at ${fmtV(cmp.peak[1], cmp.norm)} on ${cmp.peak[0]} (${k}-day window).${b}`;
 }
 
 function syncAiWindow(src) { // the select fills the date inputs; the inputs are what the fit uses
@@ -494,7 +502,7 @@ function drawTable(ai, cv, src) {
 }
 
 function drawTop(rows) {
-  const svg = $("top"); const pts = rows.filter(r => r.feed === "google_top").map(r => [r.ts.slice(0, 10), r.ai / r.n, r]);
+  const svg = $("top"); const pts = rows.filter(r => r.feed === "google_top" || r.feed === "google_top_wayback").map(r => [r.ts.slice(0, 10), r.ai / r.n, r]).sort((a, b) => a[0] < b[0] ? -1 : 1);
   if (pts.length < 2) { $("topNote").textContent = `The daily job also records Google News "Top stories" (${pts.length} snapshot${pts.length === 1 ? "" : "s"} so far${pts.length ? `; latest: ${pts[pts.length - 1][2].ai} of ${pts[pts.length - 1][2].n} headlines about AI` : ""}). This is the literal "top stories" framing but has no history, so it only becomes a chart after a couple of weeks.`; return; }
   svg.hidden = false; const W = 960, H = 200, L = 54, R = 20, T = 12, B = 30;
   const t0 = toT(pts[0][0]), t1 = toT(pts[pts.length - 1][0]); const sx = d => lin(t0, t1, L, W - R)(toT(d));
@@ -544,7 +552,7 @@ function render() {
   legend($("legend1"), keys); legend($("legend2"), ["ai", "covid"]);
   const fits = computeFits(src);
   drawHistory(src, cmp, k, keys, $("yscale").value, fits);
-  drawAlign(cmp, k);
+  drawAlign(cmp, k, src);
   drawMilestones(cmp);
   drawTable(ai, cv, src);
 }
@@ -559,9 +567,9 @@ function render() {
   if (has(doc)) { const s = pctSource(doc.series); s.unit = "US online news articles"; s.note = `GDELT DOC: percent of all monitored US English online articles matching the topic query, through ${s.last}.`; SOURCES.doc = s; }
   if (top && top.length) {
     const daily = {};
-    for (const r of top.filter(r => r.feed === "google_top")) { const dd = r.ts.slice(0, 10); const row = daily[dd] || (daily[dd] = { n: 0, ai: 0, covid: 0, climate: 0 }); row.n += r.n; row.ai += r.ai || 0; row.covid += r.covid || 0; row.climate += r.climate || 0; }
+    for (const r of top.filter(r => r.feed === "google_top" || r.feed === "google_top_wayback")) { const dd = r.ts.slice(0, 10); const row = daily[dd] || (daily[dd] = { n: 0, ai: 0, covid: 0, climate: 0 }); row.n += r.n; row.ai += r.ai || 0; row.covid += r.covid || 0; row.climate += r.climate || 0; }
     const s = countSource(daily); s.unit = "Google top stories"; s.fitOnly = true; s.covidNote = `No Covid-era data: collection began ${s.first}.`;
-    s.note = `Google News “Top stories” (US): daily snapshots of ~40 headlines since ${s.first}.`; SOURCES.google = s;
+    s.note = `Google News “Top stories” (US): daily snapshots of ~40 headlines since 2026-09-09, plus Wayback Machine captures of the same feed back to ${s.first} (sparse: every few days in 2017–18, roughly monthly 2019–23, weekly 2024–25; none during the Covid takeoff).`; SOURCES.google = s;
   }
   $("source").innerHTML = Object.keys(SOURCES).filter(k => !SOURCES[k].fitOnly).map(k => `<option value="${k}">${SOURCE_NAMES[k]}</option>`).join("");
   if (!Object.keys(SOURCES).length) { $("hero").innerHTML = `No data found. Run <code>uv run ai-news-share backfill</code> and serve the <code>docs/</code> folder.`; return; }
