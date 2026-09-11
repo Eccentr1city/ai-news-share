@@ -33,6 +33,7 @@ def cmd_backfill(args) -> None:
 
 
 def cmd_nyt(args) -> None:
+    nyt.TOPUP_DAYS = args.topup_days
     if not nyt.backfill(DATA, budget_s=60 * args.budget_minutes, refetch_from=args.refetch_from):
         sys.exit("NYT_API_KEY is not set (environment or .env); see README")
 
@@ -148,6 +149,7 @@ def main(argv=None) -> None:
     n = sub.add_parser("nyt")
     n.add_argument("--budget-minutes", type=float, default=40)
     n.add_argument("--refetch-from", metavar="YYYY-MM", help="discard cached months from this month on")
+    n.add_argument("--topup-days", type=int, default=nyt.TOPUP_DAYS, help="days of recent front pages to fetch via Article Search")
     n.set_defaults(fn=cmd_nyt)
     l = sub.add_parser("llm")
     l.add_argument("--status", action="store_true")
