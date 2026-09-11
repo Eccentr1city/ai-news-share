@@ -23,8 +23,17 @@ FEEDS = {
 }
 
 
+BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+
+
 def fetch(url: str) -> list[dict]:
-    root = ET.fromstring(http.get(url).content)
+    # Google returns 503 to some datacenter IPs (e.g. GitHub runners) for the default UA; retry as a browser.
+    try:
+        r = http.get(url, tries=2)
+    except Exception:  # noqa: BLE001
+        r = http.client().get(url, headers={"User-Agent": BROWSER_UA, "Accept": "application/rss+xml,text/xml;q=0.9,*/*;q=0.8"})
+        r.raise_for_status()
+    root = ET.fromstring(r.content)
     items = []
     for it in root.iter("item"):
         raw = (it.findtext("title") or "").strip()
