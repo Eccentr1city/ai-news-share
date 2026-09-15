@@ -1,7 +1,7 @@
 """Command line entry point.
 
   ai-news-share backfill [--since 2017-01-01] [--no-gdelt]   fetch/refresh all history
-  ai-news-share gdelt [--budget-minutes 25] [--kind tv|doc]  slow, cached GDELT crawl (safe to re-run)
+  ai-news-share gdelt [--budget-minutes 25] [--kind doc|tv]  slow, cached GDELT crawl (safe to re-run; tv is historical only)
   ai-news-share nyt                                          NYT front page (needs NYT_API_KEY; resumable)
   ai-news-share llm [--status] [--sync]                      LLM topic labels (needs ANTHROPIC_API_KEY)
   ai-news-share snapshot                                     append today's Google News top stories
@@ -39,7 +39,7 @@ def cmd_nyt(args) -> None:
 
 
 def cmd_gdelt(args) -> None:
-    kinds = [args.kind] if getattr(args, "kind", None) else ["tv", "doc"]
+    kinds = [args.kind] if getattr(args, "kind", None) else ["doc"]  # TV API stopped updating in Oct 2024
     budget = 60 * float(getattr(args, "budget_minutes", 25)) / len(kinds)
     for kind in kinds:
         r = gdelt.crawl(kind, date.today(), DATA, budget_s=budget)

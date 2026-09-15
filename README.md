@@ -31,7 +31,6 @@ measures three instruments that trade off breadth, prominence and history:
 | Series | What is counted | Unit | History | Closest to |
 |---|---|---|---|---|
 | **Wikipedia Current Events** (primary) | Leaf items on `Portal:Current events/<day>`, an editorially curated list of the day's important news, ~15–40 items/day | share of items matching the AI regex, pooled over a rolling window | 2017 → today | "the top ~100 stories this week" |
-| **GDELT TV** | CNN + Fox News + MSNBC airtime, via the Internet Archive TV News archive | % of 15-second clips mentioning AI (station average) | 2017 → recently | front-page *prominence* |
 | **GDELT DOC** | Every US English online article GDELT monitors | % of articles matching the AI query | 2017 → today | total *volume* |
 | **NYT front page** (needs free key) | Articles printed on page A1, from the NYT Archive API, ~6/day | share of A1 articles matching the AI regex | 1851 → today (fetched from 2017) | a literal US front page, one paper |
 | **Google News Top Stories** | The ~35–70 headlines Google ranks as top stories right now | share of headlines | from the day you start collecting | the literal "top stories" framing, going forward |
@@ -81,7 +80,7 @@ spends 30 minutes on it; run it locally for longer if you want it done sooner:
 uv run ai-news-share gdelt --budget-minutes 240
 ```
 
-The TV archive API currently ends in October 2024. If you want a stronger
+GDELT's TV API (cable-news airtime) stopped returning data after 2024-10-11, apparently when the Internet Archive's TV News pipeline went down; it is no longer shown on the dashboard. `ai-news-share gdelt --kind tv` still fetches the 2017–2024 history if you want it. If you want a stronger
 "US top stories" series and are willing to sign up for a key, the two best
 free options are the **NYT Archive API** (every article since 1851 with
 `print_page`, so "page 1 of the print paper" is a literal front-page series)

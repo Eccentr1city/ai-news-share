@@ -292,3 +292,46 @@
 {"ts": "2026-09-13T17:29:55+00:00", "feed": "google_us", "n": 70, "ai": 3, "covid": 0, "climate": 0}
 {"ts": "2026-09-14T19:02:56+00:00", "feed": "google_top", "n": 38, "ai": 5, "covid": 0, "climate": 0}
 {"ts": "2026-09-14T19:02:56+00:00", "feed": "google_us", "n": 70, "ai": 2, "covid": 0, "climate": 1}
+{"ts": "2026-09-11T18:38:41+00:00", "feed": "google_top", "n": 37, "ai": 1, "covid": 0, "climate": 0}
+{"ts": "2026-09-11T18:38:41+00:00", "feed": "google_us", "n": 62, "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-04-21T01:19:06+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-04-22T01:18:56+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-04-23T01:19:02+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 1}
+{"ts": "2018-04-24T01:19:00+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-04-25T01:18:58+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-04-26T01:19:05+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-04-27T01:19:09+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-04-28T01:19:02+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-04-29T01:19:01+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-04-30T01:19:01+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-01T01:18:50+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 1}
+{"ts": "2018-05-02T01:19:05+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-03T01:18:52+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-04T01:19:10+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-05T01:19:10+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-06T01:19:00+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-07T01:19:03+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-08T01:18:50+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-09T01:19:19+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 1, "covid": 0, "climate": 0}
+{"ts": "2018-05-10T01:18:49+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-11T01:18:59+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-12T01:19:35+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-13T01:18:58+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-14T01:18:52+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-15T01:19:03+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-16T01:20:42+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-05-17T01:19:12+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&gl=US&hl=en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-07-27T02:27:24+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&hl=en&gl=US", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2018-10-14T21:02:51+00:00", "feed": "google_top_wayback", "n": 20, "source_url": "https://news.google.com/news/rss/?ned=us&hl=en&gl=US", "ai": 0, "covid": 0, "climate": 1}
+{"ts": "2019-03-24T09:58:04+00:00", "feed": "google_top_wayback", "n": 36, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2019-03-28T20:54:58+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2019-03-30T02:38:19+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2019-03-31T00:53:16+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2019-04-25T12:29:49+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2019-05-04T16:32:24+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2019-06-10T07:39:05+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 1}
+{"ts": "2019-06-29T03:03:40+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 1, "covid": 0, "climate": 0}
+{"ts": "2019-07-03T19:21:13+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2019-07-06T09:45:38+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 1, "covid": 0, "climate": 0}
+{"ts": "2019-07-21T19:40:08+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 0}
+{"ts": "2019-07-23T07:16:03+00:00", "feed": "google_top_wayback", "n": 38, "source_url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", "ai": 0, "covid": 0, "climate": 0}

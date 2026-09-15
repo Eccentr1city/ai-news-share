@@ -154,7 +154,7 @@
   <details style="margin-top:24px"><summary>Method and caveats</summary>
     <ul class="note">
       <li><b>Wikipedia Current Events</b> (default source): the leaf bullet items on each day's <code>Portal:Current events</code> page, an editorially curated list of the day's important news (~15–40 items/day). Share = AI items ÷ all items, pooled over the window. Global, event-shaped, volunteer-edited; it under-counts slow-burn debate relative to US front pages, so its Covid curve is steep and its AI level low. Compare shapes and multiples as well as levels.</li>
-      <li><b>GDELT TV</b>: percent of 15-second clips on CNN, Fox News and MSNBC mentioning the query (station average), from the Internet Archive TV News archive. Cable news only covers the top few stories, so this is a prominence measure. <b>GDELT DOC</b>: percent of all US English online articles matching the query, a volume measure. Both appear in the source menu only when the daily job has managed to fetch them; GDELT throttles aggressively.</li>
+      <li><b>GDELT DOC</b>: percent of all US English online articles matching the query, a volume measure. Both appear in the source menu only when the daily job has managed to fetch them; GDELT throttles aggressively.</li>
       <li><b>Classifier</b>: one regular expression per topic, applied to the item text plus its parent bullets (the topic often sits in the parent, e.g. “COVID-19 pandemic › …”). Tuned for precision: <code>AI</code> counts only as a capitalized token; named labs, models, people and concepts are listed explicitly. Every tagged item is in <code>data/wiki_items.jsonl</code> for audit. The <b>LLM</b> option uses Claude labels against a fixed rubric that counts only <i>frontier, general-purpose AI</i> (LLMs, foundation models, frontier labs, AI policy and risk, AI-generated media, and speculative pieces about general AI), not narrow machine-learning applications, self-driving cars, robots, chips or big-tech news in general. Bulk labels come from a small model; every chunk with an AI positive is re-adjudicated by a stronger one.</li>
       <li><b>Matching</b>: the first day in the Covid window whose windowed share is ≥ AI's current share. “Multiple of own baseline” divides AI by its 2017 mean and Covid by its Jan–Nov 2019 mean first, since AI had a nonzero baseline and Covid had none.</li>
       <li><b>Structural difference</b>: Covid was one event with an exponential ramp over ~8 weeks and direct harm to voters; AI is a slow burn with spikes. Level-matching says how loud AI is relative to a known moment, not that politics will follow the same clock.</li>
@@ -542,9 +542,9 @@ function drawRecent(items) {
 
 // ---------- app ----------
 const SOURCES = {};
-const SOURCE_NAMES = { wiki: "Wikipedia Current Events (curated items)", nyt: "NYT front page (A1 articles)", google: "Google News top stories (daily snapshots)", tv: "GDELT TV (cable news airtime)", doc: "GDELT DOC (all US online articles)" };
-const SOURCE_ORDER = ["wiki", "nyt", "google", "tv", "doc"];
-const SOURCE_SHORT = { wiki: "Wikipedia", nyt: "NYT A1", google: "Google top", tv: "Cable TV", doc: "GDELT DOC" };
+const SOURCE_NAMES = { wiki: "Wikipedia Current Events (curated items)", nyt: "NYT front page (A1 articles)", google: "Google News top stories (daily snapshots)", doc: "GDELT DOC (all US online articles)" };
+const SOURCE_ORDER = ["wiki", "nyt", "google", "doc"];
+const SOURCE_SHORT = { wiki: "Wikipedia", nyt: "NYT A1", google: "Google top", doc: "GDELT DOC" };
 async function loadJson(p) { try { const r = await fetch(p); return r.ok ? await r.json() : null; } catch { return null; } }
 async function loadJsonl(p) { try { const r = await fetch(p); return r.ok ? (await r.text()).trim().split("\n").filter(Boolean).map(JSON.parse) : []; } catch { return []; } }
 
@@ -576,12 +576,11 @@ function render() {
 }
 
 (async () => {
-  const [wiki, nyt, tv, doc, recent, top] = await Promise.all([loadJson("data/wiki_daily.json"), loadJson("data/nyt_daily.json"), loadJson("data/gdelt_tv.json"), loadJson("data/gdelt_doc.json"), loadJson("data/wiki_recent.json"), loadJsonl("data/topstories.jsonl")]);
+  const [wiki, nyt, doc, recent, top] = await Promise.all([loadJson("data/wiki_daily.json"), loadJson("data/nyt_daily.json"), loadJson("data/gdelt_doc.json"), loadJson("data/wiki_recent.json"), loadJsonl("data/topstories.jsonl")]);
   if (wiki) { const s = countSource(wiki.daily); s.unit = "curated news items"; s.note = `Wikipedia Current Events: ${Object.keys(wiki.daily).length} days, ${Object.values(wiki.daily).reduce((a, r) => a + r.n, 0).toLocaleString()} curated news items since ${s.first}. Share = AI items ÷ all items in the window.`; SOURCES.wiki = s; }
   if (nyt && Object.keys(nyt.daily).length > 60) { const s = countSource(nyt.daily); s.unit = "NYT front-page articles"; s.note = `New York Times front page (Archive API, articles printed on page A1): ${Object.keys(nyt.daily).length} days, ${Object.values(nyt.daily).reduce((a, r) => a + r.n, 0).toLocaleString()} A1 articles since ${s.first}. Share = AI articles ÷ all A1 articles in the window.`; SOURCES.nyt = s; }
   // Offer a GDELT source only once it can support the comparison: Covid through spring 2020 and a year of AI.
   const has = j => j && Object.keys(j.series.covid || {}).some(d => d.startsWith("2020-03")) && Object.keys(j.series.ai || {}).length > 365;
-  if (has(tv)) { const s = pctSource(tv.series); s.unit = "cable-news airtime"; s.note = `GDELT TV: percent of 15-second clips on CNN, Fox News and MSNBC mentioning the topic (station average), through ${s.last}.`; SOURCES.tv = s; }
   if (has(doc)) { const s = pctSource(doc.series); s.unit = "US online news articles"; s.note = `GDELT DOC: percent of all monitored US English online articles matching the topic query, through ${s.last}.`; SOURCES.doc = s; }
   if (top && top.length) {
     const daily = {};
