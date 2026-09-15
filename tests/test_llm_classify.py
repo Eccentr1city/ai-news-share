@@ -39,3 +39,18 @@ def test_add_llm_counts():
     labels.add_llm_counts(row, {"ai": True, "covid": False, "climate": False})
     labels.add_llm_counts(row, None)
     assert row["n_llm"] == 1 and row["ai_llm"] == 1 and row["covid_llm"] == 0
+
+
+def test_parse_accepts_echo_of_item_after_context():
+    chunk = [("k1", "AI boom > OpenAI releases GPT-6 Astra"), ("k2", "Floods kill 12 in Turkey")]
+    rows = llm_classify._parse(chunk, json.dumps({"labels": [
+        {"i": 0, "echo": "OpenAI releases GPT-6", "ai": True, "covid": False, "climate": False},
+        {"i": 1, "echo": "Floods kill 12", "ai": False, "covid": False, "climate": False},
+    ]}))
+    assert [r["key"] for r in rows] == ["k1", "k2"]
+
+
+def test_parse_single_item_skips_echo():
+    rows = llm_classify._parse([("k1", "Middle Eastern crisis > Gaza war > Airstrikes kill four")], json.dumps({"labels": [
+        {"i": 0, "echo": "something else entirely", "ai": False, "covid": False, "climate": False}]}))
+    assert [r["key"] for r in rows] == ["k1"]

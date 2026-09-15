@@ -87,11 +87,16 @@ def _parse(chunk: list[tuple[str, str]], text: str, model: str | None = None) ->
         if not (isinstance(i, int) and 0 <= i < len(chunk)) or i in seen:
             continue
         key, t = chunk[i]
-        echo = _norm_words(str(lab.get("echo", "")))
-        want = _norm_words(t)
-        if echo and want and echo[: len(want)] != want[: len(echo)] and echo[0] != want[0]:
-            log.debug("echo mismatch at %d: %r vs %r", i, echo, want)
-            continue
+        # Echo check guards against index slips inside a chunk. A single-item request cannot slip, so skip it
+        # there; otherwise accept an echo of either the full text or the item after its "parent > " context
+        # (models tend to echo the headline rather than the heading).
+        if len(chunk) > 1:
+            echo = _norm_words(str(lab.get("echo", "")))
+            cands = [_norm_words(t), _norm_words(t.rsplit(" > ", 1)[-1])]
+            ok = not echo or any(w and (echo[0] == w[0] or echo[: len(w)] == w[: len(echo)]) for w in cands)
+            if not ok:
+                log.debug("echo mismatch at %d: %r vs %r", i, echo, cands)
+                continue
         seen.add(i)
         rows.append({"key": key, **{k: bool(lab.get(k)) for k in TOPICS}, "model": model or MODEL, "text": t[:160]})
     return rows
