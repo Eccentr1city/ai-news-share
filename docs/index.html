@@ -88,7 +88,7 @@
     <p class="note" id="srcNote" style="margin:12px 0 0"></p>
     <div class="controls">
       <label id="clfWrap" hidden>Classifier <select id="clf"><option value="_llm" selected>LLM (frontier-AI rubric)</option><option value="">regex (keywords)</option></select></label>
-      <label>Window <select id="win"><option selected>7</option><option>14</option><option>28</option><option>56</option></select> days</label>
+      <label>Window <select id="win"><option value="auto" selected>auto</option><option>7</option><option>14</option><option>28</option><option>56</option></select> <span id="winNote" class="muted"></span></label>
     </div>
   </div>
 
@@ -599,6 +599,7 @@ function drawRecent(items) {
 const SOURCES = {};
 const SOURCE_NAMES = { wiki: "Wikipedia Current Events (curated items)", nyt: "NYT front page (A1 articles)", google: "Google News top stories (daily snapshots)", doc: "GDELT DOC (all US online articles)" };
 const SOURCE_ORDER = ["nyt", "wiki", "google", "doc"];
+const WIN_BY_SOURCE = { pending: false };
 const SOURCE_SHORT = { wiki: "Wikipedia", nyt: "NYT A1", google: "Google top", doc: "GDELT DOC" };
 async function loadJson(p) { try { const r = await fetch(p); return r.ok ? await r.json() : null; } catch { return null; } }
 async function loadJsonl(p) { try { const r = await fetch(p); return r.ok ? (await r.text()).trim().split("\n").filter(Boolean).map(JSON.parse) : []; } catch { return []; } }
@@ -608,7 +609,19 @@ function render() {
   for (const b of document.querySelectorAll("#sourceTabs button")) b.setAttribute("aria-pressed", String(b.dataset.src === $("source").value));
   $("clfWrap").hidden = !src.hasLlm;
   if (src.setClassifier) src.setClassifier(src.hasLlm ? $("clf").value : "");
-  const k = +$("win").value, mode = $("mode").value, cv0 = $("cv0").value, cv1 = $("cv1").value;
+  // The headline window is remembered per source ("auto" unless the user picked one for this source).
+  const srcKey = $("source").value;
+  if (WIN_BY_SOURCE.pending) { WIN_BY_SOURCE[srcKey] = $("win").value; WIN_BY_SOURCE.pending = false; }
+  $("win").value = WIN_BY_SOURCE[srcKey] || "auto";
+  // "auto" = the smallest offered window whose latest AI share is above zero (falls back to the largest).
+  const WINDOWS = [7, 14, 28, 56];
+  let k = +$("win").value || 0, autoNote = "";
+  if (!k) {
+    k = WINDOWS.find(w => (lastNonNull(src.series("ai", w)) || [])[1] > 0) || WINDOWS[WINDOWS.length - 1];
+    autoNote = `→ ${k} days`;
+  }
+  $("winNote").textContent = autoNote ? `${autoNote} (smallest with any AI ${src.unit})` : "days";
+  const mode = $("mode").value, cv0 = $("cv0").value, cv1 = $("cv1").value;
   const ai = src.series("ai", k), cv = src.series("covid", k);
   const cmp = compare(ai, cv, { cv0, cv1, mode });
   if (!cmp) { $("hero").textContent = "Not enough data for a comparison."; return; }
@@ -659,7 +672,8 @@ function render() {
     $("recentNote").insertAdjacentHTML("afterend", `<p class="note">Regex and LLM disagree on ${dis.length} of ${recent.length} recent flagged items (${dis.filter(i => i.topics_llm.ai).length} LLM-only, ${dis.filter(i => i.topics.ai).length} regex-only). Switch the classifier above to compare.</p>`);
   }
   TOP = top; drawTop(top);
-  for (const id of ["source", "clf", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin", "fitkCv", "fitkAi"]) $(id).addEventListener("input", render);
+  for (const id of ["source", "clf", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin", "fitkCv", "fitkAi"]) $(id).addEventListener("input", render);
+  $("win").addEventListener("input", () => { WIN_BY_SOURCE.pending = true; render(); });
   $("clf").addEventListener("input", () => { RECENT && drawRecent(RECENT); TOP && drawTop(TOP); });
   for (const id of ["topRange", "topk"]) $(id).addEventListener("input", () => TOP && drawTop(TOP));
   for (const id of ["h0", "h1", "hwin"]) $(id).addEventListener("input", render);
