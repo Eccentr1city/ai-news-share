@@ -88,7 +88,7 @@
     <p class="note" id="srcNote" style="margin:12px 0 0"></p>
     <div class="controls">
       <label id="clfWrap" hidden>Classifier <select id="clf"><option value="_llm" selected>LLM (frontier-AI rubric)</option><option value="">regex (keywords)</option></select></label>
-      <label>Window <select id="win"><option value="auto" selected>auto</option><option>7</option><option>14</option><option>28</option><option>56</option></select> <span id="winNote" class="muted"></span></label>
+      <label>Window <select id="win"><option>3</option><option>7</option><option>14</option><option>21</option><option>28</option></select> days <span id="winNote" class="muted"></span></label>
     </div>
   </div>
 
@@ -609,18 +609,19 @@ function render() {
   for (const b of document.querySelectorAll("#sourceTabs button")) b.setAttribute("aria-pressed", String(b.dataset.src === $("source").value));
   $("clfWrap").hidden = !src.hasLlm;
   if (src.setClassifier) src.setClassifier(src.hasLlm ? $("clf").value : "");
-  // The headline window is remembered per source ("auto" unless the user picked one for this source).
+  // Headline window, remembered per source. Until the user picks one for a source, it is the smallest
+  // offered window whose latest AI share is above zero (so the headline never reads 0% just from a short window).
   const srcKey = $("source").value;
-  if (WIN_BY_SOURCE.pending) { WIN_BY_SOURCE[srcKey] = $("win").value; WIN_BY_SOURCE.pending = false; }
-  $("win").value = WIN_BY_SOURCE[srcKey] || "auto";
-  // "auto" = the smallest offered window whose latest AI share is above zero (falls back to the largest).
-  const WINDOWS = [7, 14, 28, 56];
-  let k = +$("win").value || 0, autoNote = "";
-  if (!k) {
-    k = WINDOWS.find(w => (lastNonNull(src.series("ai", w)) || [])[1] > 0) || WINDOWS[WINDOWS.length - 1];
-    autoNote = `→ ${k} days`;
+  const WINDOWS = [...$("win").options].map(o => +o.value);
+  if (WIN_BY_SOURCE.pending) { WIN_BY_SOURCE[srcKey] = +$("win").value; WIN_BY_SOURCE.pending = false; }
+  let picked = false;
+  if (!WIN_BY_SOURCE[srcKey]) {
+    WIN_BY_SOURCE[srcKey] = WINDOWS.find(w => (lastNonNull(src.series("ai", w)) || [])[1] > 0) || WINDOWS[WINDOWS.length - 1];
+    picked = true;
   }
-  $("winNote").textContent = autoNote ? `${autoNote} (smallest with any AI ${src.unit})` : "days";
+  $("win").value = String(WIN_BY_SOURCE[srcKey]);
+  const k = WIN_BY_SOURCE[srcKey];
+  $("winNote").textContent = picked && k !== WINDOWS[0] ? `(shorter windows have no AI ${src.unit})` : "";
   const mode = $("mode").value, cv0 = $("cv0").value, cv1 = $("cv1").value;
   const ai = src.series("ai", k), cv = src.series("covid", k);
   const cmp = compare(ai, cv, { cv0, cv1, mode });
