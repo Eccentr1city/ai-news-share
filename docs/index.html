@@ -88,7 +88,7 @@
     <p class="note" id="srcNote" style="margin:12px 0 0"></p>
     <div class="controls">
       <label id="clfWrap" hidden>Classifier <select id="clf"><option value="_llm" selected>LLM (frontier-AI rubric)</option><option value="">regex (keywords)</option></select></label>
-      <label>Window <select id="win"><option>7</option><option selected>14</option><option>28</option><option>56</option></select> days</label>
+      <label>Window <select id="win"><option selected>7</option><option>14</option><option>28</option><option>56</option></select> days</label>
     </div>
   </div>
 
@@ -106,12 +106,15 @@
   <h2>Full history</h2>
   <div class="card">
     <div class="controls" style="margin:0 0 10px">
+      <label>From <input type="date" id="h0" value="2019-01-01"> to <input type="date" id="h1"></label>
+      <button type="button" id="hAll" title="Show everything the source has">all data</button>
+      <label>Window <input type="number" id="hwin" value="28" min="1" max="365" style="width:58px"> days</label>
       <label>Y scale <select id="yscale"><option value="lin">linear</option><option value="log">log</option><option value="logit" selected>log odds (topic : rest)</option></select></label>
       <label><input type="checkbox" id="showClimate"> show climate as a reference</label>
     </div>
     <div class="legend" id="legend1"></div>
     <div class="chart"><svg id="hist" viewBox="0 0 960 340"></svg><div class="tip" id="tip1"></div></div>
-    <p class="note">Rolling-window log odds (or share). Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the section below (computed with the fit windows set there).</p>
+    <p class="note">Rolling-window log odds (or share) with its own window (28 days by default, so the long view stays smooth), from 2019 by default; edit the dates or click “all data” for the full 2017– record. Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the section below (computed with the fit windows set there).</p>
   </div>
 
   <h2>What level of coverage went with which action?</h2>
@@ -328,20 +331,28 @@ function hover(svg, tip, { L, R, T, B, W, H, xOf, dateAt, rows }) {
 function drawHistory(src, cmp, k, keys, yscale, fits) {
   const svg = $("hist"), W = 960, H = 340, L = 60, R = 70, T = 14, B = 34;
   const isLogit = yscale === "logit", log = yscale === "log";
-  const lines = keys.map(key => [key, isLogit ? src.logOdds(key, k) : key === "ai" ? cmp.aiNorm : key === "covid" ? cmp.cvNorm : src.series(key, k)]);
-  const t0 = toT(src.first), t1 = toT(src.last);
+  // date range: inputs are the truth; empty end = source's last day; clamp to what the source has
+  if (!$("h1").value) $("h1").value = src.last;
+  if (!$("h0").value) $("h0").value = "2019-01-01";
+  let a = $("h0").value, b = $("h1").value;
+  if (a < src.first) a = src.first; if (b > src.last) b = src.last; if (a >= b) { a = src.first; b = src.last; }
+  const inR = ([d]) => d >= a && d <= b;
+  const lines = keys.map(key => [key, (isLogit ? src.logOdds(key, k) : key === "ai" ? cmp.aiNorm : key === "covid" ? cmp.cvNorm : src.series(key, k)).filter(inR)]);
+  const t0 = toT(a), t1 = toT(b);
   const sx = d => lin(t0, t1, L, W - R)(toT(d));
   const vals = lines.flatMap(([, s]) => s.map(x => x[1]));
   const { s: sy, ticks } = yScale(vals, T, H - B, log, isLogit);
   const fy = isLogit ? fmtOdds : v => fmtV(v, cmp.norm);
-  let g = `<g class="grid">${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/>`).join("")}</g>`;
+  const { ticks: xt, fmt } = calendarTicks(a, b); const every = Math.max(1, Math.ceil(xt.length / 10));
+  let g = `<g class="grid">${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"/>`).join("")}${xt.map(s => `<line x1="${sx(s)}" x2="${sx(s)}" y1="${T}" y2="${H - B}"/>`).join("")}</g>`;
   g += `<g class="axis">${ticks.map(v => `<text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end">${fy(v)}</text>`).join("")}`;
-  for (let y = +src.first.slice(0, 4) + 1; y <= +src.last.slice(0, 4); y++) { const x = sx(`${y}-01-01`); g += `<line x1="${x}" x2="${x}" y1="${H - B}" y2="${H - B + 5}"/><text x="${x}" y="${H - 12}" text-anchor="middle">${y}</text>`; }
+  xt.forEach((s, i) => { g += `<line x1="${sx(s)}" x2="${sx(s)}" y1="${H - B}" y2="${H - B + 5}"/>`; if (i % every === 0) g += `<text x="${sx(s)}" y="${H - 12}" text-anchor="middle">${fmt(s)}</text>`; });
   g += `</g>`;
-  g += `<g class="ms">${AI_MS.filter(([d]) => d >= src.first && d <= src.last).map(([d]) => `<line x1="${sx(d)}" x2="${sx(d)}" y1="${H - B - 8}" y2="${H - B}"/>`).join("")}</g>`;
+  g += `<g class="ms">${AI_MS.filter(([d]) => d >= a && d <= b).map(([d]) => `<line x1="${sx(d)}" x2="${sx(d)}" y1="${H - B - 8}" y2="${H - B}"/>`).join("")}</g>`;
   for (const [key, s] of lines) g += `<path class="series" d="${pathOf(s, sx, sy)}" stroke="${COLORS[key]}"/>`;
-  if (isLogit) for (const [key, f] of fits) if (f && keys.includes(key)) {
-    const pts = [[f.a, f.at(f.a)], [f.b, f.at(f.b)]].map(([d, v]) => `${sx(d).toFixed(1)} ${sy(v).toFixed(1)}`);
+  const clampD = d => d < a ? a : d > b ? b : d;
+  if (isLogit) for (const [key, f] of fits) if (f && keys.includes(key) && f.b >= a && f.a <= b) {
+    const pts = [[clampD(f.a), f.at(clampD(f.a))], [clampD(f.b), f.at(clampD(f.b))]].map(([d, v]) => `${sx(d).toFixed(1)} ${sy(v).toFixed(1)}`);
     g += `<path d="M${pts[0]}L${pts[1]}" fill="none" stroke="${COLORS[key]}" stroke-width="2" stroke-dasharray="6 5" opacity=".85"/>`;
   }
   // direct labels at line ends
@@ -614,7 +625,9 @@ function render() {
   $("srcNote").textContent = src.note;
   legend($("legend1"), keys); legend($("legend2"), ["ai", "covid"]);
   const fits = computeFits(src);
-  drawHistory(src, cmp, k, keys, $("yscale").value, fits);
+  const hk = Math.min(365, Math.max(1, +$("hwin").value || 28));
+  const cmpH = hk === k ? cmp : (compare(src.series("ai", hk), src.series("covid", hk), { cv0, cv1, mode }) || cmp);
+  drawHistory(src, cmpH, hk, keys, $("yscale").value, fits);
   drawAlign(cmp, k, src);
   drawMilestones(cmp);
   drawTable(ai, cv, src);
@@ -649,6 +662,8 @@ function render() {
   for (const id of ["source", "clf", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin", "fitkCv", "fitkAi"]) $(id).addEventListener("input", render);
   $("clf").addEventListener("input", () => { RECENT && drawRecent(RECENT); TOP && drawTop(TOP); });
   for (const id of ["topRange", "topk"]) $(id).addEventListener("input", () => TOP && drawTop(TOP));
+  for (const id of ["h0", "h1", "hwin"]) $(id).addEventListener("input", render);
+  $("hAll").addEventListener("click", () => { const s = SOURCES[$("source").value]; if (s) { $("h0").value = s.first; $("h1").value = s.last; render(); } });
   for (const id of ["top0", "top1"]) $(id).addEventListener("input", () => { $("topRange").value = "custom"; TOP && drawTop(TOP); });
   for (const id of ["ai0", "ai1"]) $(id).addEventListener("input", () => { $("aiwin").value = "custom"; render(); });
 })();
