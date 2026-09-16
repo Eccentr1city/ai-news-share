@@ -129,6 +129,16 @@ def collect_texts(data_dir: Path) -> dict[str, str]:
                 t = nyt_text(it)
                 if t:
                     texts[labels.key_of(t)] = t
+    p = data_dir / "topstories_raw.jsonl"
+    if p.exists():
+        from .googlenews import GOOGLE_FEEDS_FOR_LLM
+
+        for line in p.read_text().splitlines():
+            if not line.strip():
+                continue
+            it = json.loads(line)
+            if it.get("feed") in GOOGLE_FEEDS_FOR_LLM and it.get("title"):
+                texts[labels.key_of(it["title"])] = it["title"]
     return texts
 
 

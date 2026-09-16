@@ -87,7 +87,7 @@
     <div id="hero" class="hero">Loading data…</div>
     <p class="note" id="srcNote" style="margin:12px 0 0"></p>
     <div class="controls">
-      <label id="clfWrap" hidden>Classifier <select id="clf"><option value="">regex</option><option value="_llm">LLM: frontier AI rubric</option></select></label>
+      <label id="clfWrap" hidden>Classifier <select id="clf"><option value="_llm" selected>LLM (frontier-AI rubric)</option><option value="">regex (keywords)</option></select></label>
       <label>Window <select id="win"><option>7</option><option>14</option><option selected>28</option><option>56</option></select> days</label>
     </div>
   </div>
@@ -195,7 +195,7 @@ const daysBetween = (a, b) => Math.round((toT(b) - toT(a)) / 864e5);
 function countSource(daily) {
   const days = Object.keys(daily).sort();
   let sfx = ""; // "" = regex columns (ai, n); "_llm" = LLM columns (ai_llm, n_llm)
-  const cnt = (r, topic) => r ? [r[topic + sfx] || 0, sfx ? (r.n_llm || 0) : r.n] : [0, 0];
+  const cnt = (r, topic) => !r ? [0, 0] : (sfx && r.n_llm) ? [r[topic + sfx] || 0, r.n_llm] : [r[topic] || 0, r.n];
   return {
     kind: "count", first: days[0], last: days[days.length - 1],
     hasLlm: Object.values(daily).some(r => r.n_llm),
@@ -519,7 +519,9 @@ function drawTable(ai, cv, src) {
 }
 
 function drawTop(rows) {
-  const svg = $("top"); const pts = rows.filter(r => r.feed === "google_top" || r.feed === "google_top_wayback").map(r => [r.ts.slice(0, 10), r.ai / r.n, r]).sort((a, b) => a[0] < b[0] ? -1 : 1);
+  const svg = $("top"); const llm = $("clf").value === "_llm";
+  const pick = r => (llm && r.n_llm) ? [r.ai_llm, r.n_llm] : [r.ai, r.n];
+  const pts = rows.filter(r => r.feed === "google_top" || r.feed === "google_top_wayback").map(r => { const [a, n] = pick(r); return [r.ts.slice(0, 10), a / n, { ...r, ai: a, n }]; }).sort((a, b) => a[0] < b[0] ? -1 : 1);
   if (pts.length < 2) { $("topNote").textContent = `The daily job also records Google News "Top stories" (${pts.length} snapshot${pts.length === 1 ? "" : "s"} so far${pts.length ? `; latest: ${pts[pts.length - 1][2].ai} of ${pts[pts.length - 1][2].n} headlines about AI` : ""}). This is the literal "top stories" framing but has no history, so it only becomes a chart after a couple of weeks.`; return; }
   svg.hidden = false; const W = 960, H = 200, L = 54, R = 20, T = 12, B = 30;
   const t0 = toT(pts[0][0]), t1 = toT(pts[pts.length - 1][0]); const sx = d => lin(t0, t1, L, W - R)(toT(d));
@@ -531,7 +533,7 @@ function drawTop(rows) {
   hover(svg, $("tip3"), { L, R, T, B, W, H, xOf: sx, dateAt: x => fmtD(lin(L, W - R, t0, t1)(x)), rows: d => { const p = pts.reduce((m, q) => Math.abs(toT(q[0]) - toT(d)) < Math.abs(toT(m[0]) - toT(d)) ? q : m); return [{ text: `<b>${longDate(p[0])}</b>` }, { key: "ai", label: "AI", value: `${p[2].ai} / ${p[2].n} = ${fmtV(p[1])}` }]; } });
 }
 
-let RECENT = null;
+let RECENT = null, TOP = null;
 function drawRecent(items) {
   RECENT = items;
   const llm = $("clf").value === "_llm";
@@ -551,8 +553,8 @@ async function loadJsonl(p) { try { const r = await fetch(p); return r.ok ? (awa
 function render() {
   const src = SOURCES[$("source").value]; if (!src) return;
   for (const b of document.querySelectorAll("#sourceTabs button")) b.setAttribute("aria-pressed", String(b.dataset.src === $("source").value));
-  $("clfWrap").hidden = !src.hasLlm; if (!src.hasLlm) $("clf").value = "";
-  if (src.setClassifier) src.setClassifier($("clf").value);
+  $("clfWrap").hidden = !src.hasLlm;
+  if (src.setClassifier) src.setClassifier(src.hasLlm ? $("clf").value : "");
   const k = +$("win").value, mode = $("mode").value, cv0 = $("cv0").value, cv1 = $("cv1").value;
   const ai = src.series("ai", k), cv = src.series("covid", k);
   const cmp = compare(ai, cv, { cv0, cv1, mode });
@@ -584,7 +586,7 @@ function render() {
   if (has(doc)) { const s = pctSource(doc.series); s.unit = "US online news articles"; s.note = `GDELT DOC: percent of all monitored US English online articles matching the topic query, through ${s.last}.`; SOURCES.doc = s; }
   if (top && top.length) {
     const daily = {};
-    for (const r of top.filter(r => r.feed === "google_top" || r.feed === "google_top_wayback")) { const dd = r.ts.slice(0, 10); const row = daily[dd] || (daily[dd] = { n: 0, ai: 0, covid: 0, climate: 0 }); row.n += r.n; row.ai += r.ai || 0; row.covid += r.covid || 0; row.climate += r.climate || 0; }
+    for (const r of top.filter(r => r.feed === "google_top" || r.feed === "google_top_wayback")) { const dd = r.ts.slice(0, 10); const row = daily[dd] || (daily[dd] = { n: 0, ai: 0, covid: 0, climate: 0, n_llm: 0, ai_llm: 0, covid_llm: 0, climate_llm: 0 }); row.n += r.n; row.ai += r.ai || 0; row.covid += r.covid || 0; row.climate += r.climate || 0; row.n_llm += r.n_llm || 0; row.ai_llm += r.ai_llm || 0; row.covid_llm += r.covid_llm || 0; row.climate_llm += r.climate_llm || 0; }
     const s = countSource(daily); s.unit = "Google top stories"; s.noCovid = true; s.covidNote = `No Covid-era data: collection began ${s.first}.`;
     s.note = `Google News “Top stories” (US): daily snapshots of ~40 headlines since 2026-09-09, plus Wayback Machine captures of the same feed back to ${s.first} (sparse: every few days in 2017–18, roughly monthly 2019–23, weekly 2024–25; none during the Covid takeoff).`; SOURCES.google = s;
   }
@@ -600,9 +602,9 @@ function render() {
     const dis = recent.filter(i => i.topics_llm && i.topics_llm.ai !== i.topics.ai);
     $("recentNote").insertAdjacentHTML("afterend", `<p class="note">Regex and LLM disagree on ${dis.length} of ${recent.length} recent flagged items (${dis.filter(i => i.topics_llm.ai).length} LLM-only, ${dis.filter(i => i.topics.ai).length} regex-only). Switch the classifier above to compare.</p>`);
   }
-  drawTop(top);
+  TOP = top; drawTop(top);
   for (const id of ["source", "clf", "win", "mode", "showClimate", "yscale", "cv0", "cv1", "ft0", "ft1", "aiwin", "fitkCv", "fitkAi"]) $(id).addEventListener("input", render);
-  $("clf").addEventListener("input", () => RECENT && drawRecent(RECENT));
+  $("clf").addEventListener("input", () => { RECENT && drawRecent(RECENT); TOP && drawTop(TOP); });
   for (const id of ["ai0", "ai1"]) $(id).addEventListener("input", () => { $("aiwin").value = "custom"; render(); });
 })();
 </script>

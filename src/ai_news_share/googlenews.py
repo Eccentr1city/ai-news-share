@@ -146,3 +146,40 @@ def fetch_from_bytes(content: bytes) -> list[dict]:
         title = re.sub(r"\s+-\s+[^-]+$", "", raw)
         items.append({"title": title, "source": raw[len(title):].lstrip(" -"), "link": it.findtext("link", "")})
     return items
+
+
+# ------------------------------------------------------------- rebuild ---
+GOOGLE_FEEDS_FOR_LLM = ("google_top", "google_top_wayback")
+
+
+def rebuild_summary(data_dir: Path) -> int:
+    """Regenerate topstories.jsonl from topstories_raw.jsonl, attaching LLM labels
+    (topics_llm per headline, *_llm counts per snapshot) where they exist."""
+    from . import labels
+
+    raw_path, summary_path = data_dir / "topstories_raw.jsonl", data_dir / "topstories.jsonl"
+    if not raw_path.exists():
+        return 0
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for line in raw_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        it = json.loads(line)
+        groups.setdefault((it["ts"], it["feed"]), []).append(it)
+    extra: dict[tuple[str, str], dict] = {}
+    if summary_path.exists():  # keep fields like source_url from the existing rows
+        for line in summary_path.read_text().splitlines():
+            if line.strip():
+                r = json.loads(line)
+                extra[(r["ts"], r["feed"])] = {k: v for k, v in r.items() if k not in ("ts", "feed", "n") and not k.endswith("_llm") and k not in TOPICS}
+    rows = []
+    for (ts, feed), items in sorted(groups.items()):
+        row = {"ts": ts, "feed": feed, "n": len(items), **extra.get((ts, feed), {})}
+        for k in TOPICS:
+            row[k] = sum(1 for it in items if (it.get("topics") or {}).get(k))
+        if feed in GOOGLE_FEEDS_FOR_LLM:
+            for it in items:
+                labels.add_llm_counts(row, labels.llm_topics(data_dir, it["title"]))
+        rows.append(row)
+    summary_path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    return len(rows)

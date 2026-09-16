@@ -61,6 +61,7 @@ def cmd_llm(args) -> None:
     r = llm_classify.run(DATA, force_sync=getattr(args, "sync", False))
     print(json.dumps(r))
     if not r.get("skipped") and (r.get("ingested") or r.get("labeled_sync")):
+        googlenews.rebuild_summary(DATA)
         # Labels changed: rewrite the daily files without refetching anything.
         wikipedia.backfill(date.today(), date.today() - timedelta(days=1), DATA)
         nyt.backfill(DATA, date.today(), date.today())
@@ -72,13 +73,26 @@ def cmd_snapshot(args) -> None:
         googlenews.backfill_wayback(DATA, budget_s=60 * args.budget_minutes, limit=args.limit)
 
 
-def load_daily() -> dict:
+def load_daily(classifier: str = "llm") -> dict:
+    """Daily counts with the chosen classifier's columns mapped onto n/ai/covid/climate.
+    LLM labels are the default; fall back to regex for days with no labels."""
     p = DATA / "wiki_daily.json"
-    return json.loads(p.read_text())["daily"] if p.exists() else {}
+    if not p.exists():
+        return {}
+    daily = json.loads(p.read_text())["daily"]
+    if classifier != "llm":
+        return daily
+    out = {}
+    for d, r in daily.items():
+        if r.get("n_llm"):
+            out[d] = {"n": r["n_llm"], **{k: r.get(f"{k}_llm", 0) for k in ("ai", "covid", "climate")}}
+        else:
+            out[d] = r
+    return out
 
 
 def cmd_report(args) -> None:
-    daily = load_daily()
+    daily = load_daily("regex" if getattr(args, "regex", False) else "llm")
     if not daily:
         sys.exit("no data yet: run `ai-news-share backfill`")
     k = args.window
@@ -88,7 +102,7 @@ def cmd_report(args) -> None:
     if cmp is None:
         sys.exit("not enough data for a comparison")
     pct = lambda x: f"{100 * x:.1f}%"  # noqa: E731
-    print(f"Wikipedia Current Events, {k}-day window, as of {cmp.ai_date}")
+    print(f"Wikipedia Current Events, {k}-day window, {'regex' if getattr(args, 'regex', False) else 'LLM'} classifier, as of {cmp.ai_date}")
     print(f"  AI share of news items now: {pct(cmp.ai_now)}")
     if cmp.ai_baseline:
         print(f"  AI 2017 baseline: {pct(cmp.ai_baseline)}  ->  {cmp.ai_now_norm:.1f}x baseline")
@@ -167,6 +181,7 @@ def main(argv=None) -> None:
     s.set_defaults(fn=cmd_snapshot)
     r = sub.add_parser("report")
     r.add_argument("--window", type=int, default=7)
+    r.add_argument("--regex", action="store_true", help="use the regex classifier instead of the LLM labels")
     r.add_argument("--fit-window", type=int, help="window (days) for the Covid doubling-time fit; defaults to --window")
     r.add_argument("--fit-window-ai", type=int, help="window (days) for the AI fit; defaults to --fit-window")
     r.set_defaults(fn=cmd_report)

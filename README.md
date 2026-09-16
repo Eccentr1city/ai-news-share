@@ -32,7 +32,7 @@ measures three instruments that trade off breadth, prominence and history:
 |---|---|---|---|---|
 | **Wikipedia Current Events** (primary) | Leaf items on `Portal:Current events/<day>`, an editorially curated list of the day's important news, ~15–40 items/day | share of items matching the AI regex, pooled over a rolling window | 2017 → today | "the top ~100 stories this week" |
 | **GDELT DOC** | Every US English online article GDELT monitors | % of articles matching the AI query | 2017 → today | total *volume* |
-| **NYT front page** (needs free key) | Articles printed on page A1, from the NYT Archive API, ~6/day | share of A1 articles matching the AI regex | 1851 → today (fetched from 2017) | a literal US front page, one paper |
+| **NYT front page** (needs free key) | Articles printed on page A1, from the NYT Archive API, ~6/day | share of A1 articles labelled AI | 1851 → today (fetched from 2017) | a literal US front page, one paper |
 | **Google News Top Stories** | The ~35–70 headlines Google ranks as top stories right now | share of headlines | from the day you start collecting | the literal "top stories" framing, going forward |
 
 The Covid comparison uses the same instrument and the same classifier
@@ -91,7 +91,7 @@ git-ignored `.env` (see `.env.example`) or the environment, run
 dashboard. For the daily job, add the key as a repository secret named
 `NYT_API_KEY`. Media Cloud is not wired in yet.
 
-## LLM classifier (optional, recommended)
+## LLM classifier (the default)
 
 The regex classifier is reproducible and free, but it has edges. With an
 Anthropic API key (`ANTHROPIC_API_KEY` in `.env` or the environment, and a
@@ -122,8 +122,10 @@ overwrites the stage-1 labels there. Labels are cached by text hash in
 `docs/data/llm_labels.jsonl` with the model that produced them, so each item
 is billed once per stage. The daily increment runs synchronously.
 
-The dashboard offers a **Classifier: regex / LLM** switch, and the
-recent-items panel reports where the two disagree.
+The LLM labels are the default everywhere (dashboard, `report`); the regex
+labels stay available via the **Classifier** switch and `report --regex`, and
+the recent-items panel reports where the two disagree. Google top-stories
+headlines (live and Wayback) are labelled the same way.
 
 ## Honest caveats
 
