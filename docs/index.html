@@ -88,7 +88,7 @@
     <p class="note" id="srcNote" style="margin:12px 0 0"></p>
     <div class="controls">
       <label id="clfWrap" hidden>Classifier <select id="clf"><option value="_llm" selected>LLM (frontier-AI rubric)</option><option value="">regex (keywords)</option></select></label>
-      <label>Window <select id="win"><option>7</option><option>14</option><option selected>28</option><option>56</option></select> days</label>
+      <label>Window <select id="win"><option>7</option><option selected>14</option><option>28</option><option>56</option></select> days</label>
     </div>
   </div>
 
@@ -101,6 +101,23 @@
     <div class="legend" id="legend2"></div>
     <div class="chart"><svg id="align" viewBox="0 0 960 400"></svg><div class="tip" id="tip2"></div></div>
     <p class="note" id="alignNote"></p>
+  </div>
+
+  <h2>Full history</h2>
+  <div class="card">
+    <div class="controls" style="margin:0 0 10px">
+      <label>Y scale <select id="yscale"><option value="lin">linear</option><option value="log">log</option><option value="logit" selected>log odds (topic : rest)</option></select></label>
+      <label><input type="checkbox" id="showClimate"> show climate as a reference</label>
+    </div>
+    <div class="legend" id="legend1"></div>
+    <div class="chart"><svg id="hist" viewBox="0 0 960 340"></svg><div class="tip" id="tip1"></div></div>
+    <p class="note">Rolling-window log odds (or share). Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the section below (computed with the fit windows set there).</p>
+  </div>
+
+  <h2>What level of coverage went with which action?</h2>
+  <div class="card">
+    <table id="ms"><thead><tr><th>Date</th><th>US Covid milestone</th><th class="n">Covid share then</th><th class="n">AI now ÷ that</th></tr></thead><tbody></tbody></table>
+    <p class="note" style="margin-top:10px">Coverage does not cause policy, but it is a decent proxy for the salience that makes policy possible. The right-hand column is how many times louder AI coverage would have to get to reach each milestone's level.</p>
   </div>
 
   <h2>How fast is it growing? Doubling time of the odds</h2>
@@ -117,23 +134,6 @@
     <div id="fitGrid"></div>
     <table id="fits"><thead><tr><th>Source</th><th>Series</th><th>Fit range</th><th class="n">Window</th><th class="n">Days</th><th class="n">Odds change</th><th class="n">r²</th></tr></thead><tbody></tbody></table>
     <p class="note" id="fitNote" style="margin-top:10px"></p>
-  </div>
-
-  <h2>Full history</h2>
-  <div class="card">
-    <div class="controls" style="margin:0 0 10px">
-      <label>Y scale <select id="yscale"><option value="lin">linear</option><option value="log">log</option><option value="logit" selected>log odds (topic : rest)</option></select></label>
-      <label><input type="checkbox" id="showClimate"> show climate as a reference</label>
-    </div>
-    <div class="legend" id="legend1"></div>
-    <div class="chart"><svg id="hist" viewBox="0 0 960 340"></svg><div class="tip" id="tip1"></div></div>
-    <p class="note">Rolling-window log odds (or share). Ticks along the bottom mark AI milestones (hover to read them). Dashed lines are the doubling-time fits from the section above (computed with the fit windows set there).</p>
-  </div>
-
-  <h2>What level of coverage went with which action?</h2>
-  <div class="card">
-    <table id="ms"><thead><tr><th>Date</th><th>US Covid milestone</th><th class="n">Covid share then</th><th class="n">AI now ÷ that</th></tr></thead><tbody></tbody></table>
-    <p class="note" style="margin-top:10px">Coverage does not cause policy, but it is a decent proxy for the salience that makes policy possible. The right-hand column is how many times louder AI coverage would have to get to reach each milestone's level.</p>
   </div>
 
   <h2>Google News “Top stories” snapshots</h2>
