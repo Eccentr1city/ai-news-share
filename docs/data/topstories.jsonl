@@ -515,3 +515,5 @@
 {"ts": "2026-09-15T17:35:18+00:00", "feed": "google_us", "n": 60, "ai": 5, "covid": 1, "climate": 0}
 {"ts": "2026-09-16T18:23:44+00:00", "feed": "google_top", "n": 38, "ai": 3, "covid": 0, "climate": 0, "n_llm": 38, "ai_llm": 3, "covid_llm": 0, "climate_llm": 1}
 {"ts": "2026-09-16T18:23:44+00:00", "feed": "google_us", "n": 64, "ai": 6, "covid": 0, "climate": 0}
+{"ts": "2026-09-17T18:29:15+00:00", "feed": "google_top", "n": 38, "ai": 1, "covid": 0, "climate": 0}
+{"ts": "2026-09-17T18:29:15+00:00", "feed": "google_us", "n": 70, "ai": 3, "covid": 0, "climate": 1}
